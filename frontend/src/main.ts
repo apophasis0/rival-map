@@ -36,10 +36,40 @@ const API_BASE_URL = 'http://localhost:8000/api/network';
 const appContainer = document.getElementById('app') as HTMLElement;
 const tooltipEl = document.getElementById('tooltip') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
+const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
 const prizeSlider = document.getElementById('prizeSlider') as HTMLInputElement;
 const prizeValueDisplay = document.getElementById('prizeValue') as HTMLSpanElement;
+const controlPanel = document.getElementById('control-panel') as HTMLElement;
+const collapseBtn = document.getElementById('collapsePanel') as HTMLButtonElement;
+const fabToggle = document.getElementById('fabToggle') as HTMLButtonElement;
+
+// ============ 面板状态管理 ============
+
+let isPanelCollapsed = false;
+
+function togglePanel(): void {
+  isPanelCollapsed = !isPanelCollapsed;
+  if (isPanelCollapsed) {
+    controlPanel.classList.add('collapsed');
+    fabToggle.classList.add('visible');
+  } else {
+    controlPanel.classList.remove('collapsed');
+    fabToggle.classList.remove('visible');
+  }
+  // 保存状态到 localStorage
+  localStorage.setItem('panelCollapsed', String(isPanelCollapsed));
+}
+
+function restorePanelState(): void {
+  const savedState = localStorage.getItem('panelCollapsed');
+  if (savedState === 'true') {
+    isPanelCollapsed = true;
+    controlPanel.classList.add('collapsed');
+    fabToggle.classList.add('visible');
+  }
+}
 
 // ============ 工具函数 ============
 
@@ -108,7 +138,7 @@ function formatPrize(prize: number | null): string {
 // ============ 图数据构建 ============
 
 /** 将后端返回的数据转换为 graphology Graph 实例 */
-function buildGraph(data: BackendGraphData, width: number, height: number): Graph {
+function buildGraph(data: BackendGraphData, width: number, height: number, useYearLayout: boolean): Graph {
   const graph = new Graph();
 
   if (data.nodes.length === 0) return graph;
@@ -117,14 +147,44 @@ function buildGraph(data: BackendGraphData, width: number, height: number): Grap
   const maxPrize = Math.max(...data.nodes.map((n) => n.prize_score ?? 0), 1000);
   const nodeCount = data.nodes.length;
 
-  // 添加节点 — 初始位置以屏幕中心为基点的小范围随机
-  // synchronous FA2 预热会重新分配位置，这里只需要避免全零导致算法异常
+  // 添加节点
   const centerX = width / 2;
   const centerY = height / 2;
   const initSpread = Math.min(width, height) * 0.1;
+
+  // 如果使用年份布局，计算年份范围
+  let minYear = 0;
+  let maxYear = 0;
+  let yearRange = 1;
+  const padding = width * 0.1;  // 10% 边距
+  const usableWidth = width - 2 * padding;
+
+  if (useYearLayout && data.nodes.length > 0) {
+    const years = data.nodes.map(n => n.active_year).filter(y => y > 0);
+    if (years.length > 0) {
+      minYear = Math.min(...years);
+      maxYear = Math.max(...years);
+      yearRange = maxYear - minYear || 1; // 避免除零
+    }
+  }
+
   for (const node of data.nodes) {
-    const x = centerX + (Math.random() - 0.5) * initSpread;
-    const y = centerY + (Math.random() - 0.5) * initSpread;
+    let x: number;
+    let y: number;
+
+    if (useYearLayout) {
+      // 按年份布局：年份越近越靠右
+      const yearProgress = (node.active_year - minYear) / yearRange;
+      const baseX = padding + yearProgress * usableWidth;
+      // 添加随机偏移（标准差约为可用宽度的 3%）
+      x = baseX + (Math.random() - 0.5) * usableWidth * 0.06;
+      // Y 坐标保持随机分布
+      y = centerY + (Math.random() - 0.5) * initSpread;
+    } else {
+      // 默认布局：中心随机分布
+      x = centerX + (Math.random() - 0.5) * initSpread;
+      y = centerY + (Math.random() - 0.5) * initSpread;
+    }
 
     graph.addNode(node.id, {
       x,
@@ -464,8 +524,11 @@ async function renderNetwork(minWeight: number, minPrize: number): Promise<void>
     const width = window.innerWidth;
     const height = window.innerHeight;
 
+    // 读取年份布局设置
+    const useYearLayout = yearLayoutToggle.checked;
+
     // 构建 graphology 图
-    currentGraph = buildGraph(data, width, height);
+    currentGraph = buildGraph(data, width, height, useYearLayout);
 
     if (currentGraph.order === 0) {
       // 空图：清理渲染器和布局
@@ -540,6 +603,36 @@ function updateGraph(): void {
 
 weightSlider.addEventListener('change', updateGraph);
 prizeSlider.addEventListener('change', updateGraph);
+
+// ============ 面板折叠/展开 ============
+
+collapseBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  togglePanel();
+});
+
+fabToggle.addEventListener('click', () => {
+  togglePanel();
+});
+
+// 恢复面板状态
+restorePanelState();
+
+// ============ 年份布局 ============
+
+function restoreYearLayoutState(): void {
+  const savedState = localStorage.getItem('yearLayout');
+  if (savedState === 'true') {
+    yearLayoutToggle.checked = true;
+  }
+}
+
+yearLayoutToggle.addEventListener('change', () => {
+  localStorage.setItem('yearLayout', String(yearLayoutToggle.checked));
+  updateGraph();
+});
+
+restoreYearLayoutState();
 
 // 窗口大小变化时重新渲染
 window.addEventListener('resize', () => {

@@ -31,15 +31,97 @@ body, html {
   border: 1px solid rgba(66, 153, 225, 0.3);
   border-radius: 12px;
   padding: 20px 24px;
+  padding-top: 16px;
   z-index: 10;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
               inset 0 0 0 1px rgba(255, 255, 255, 0.6);
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* 面板折叠状态 */
+#control-panel.collapsed {
+  transform: translateX(calc(-100% - 24px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 #control-panel:hover {
   border-color: rgba(66, 153, 225, 0.6);
   box-shadow: 0 8px 32px rgba(66, 153, 225, 0.15);
+}
+
+/* 折叠按钮 */
+.collapse-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(66, 153, 225, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2b6cb0;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.collapse-btn:hover {
+  background: rgba(66, 153, 225, 0.2);
+  transform: scale(1.1);
+}
+
+.collapse-btn:active {
+  transform: scale(0.95);
+}
+
+/* FAB 浮动按钮 */
+.fab-toggle {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  width: 56px;
+  height: 56px;
+  border: 2px solid rgba(66, 153, 225, 0.5);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2b6cb0;
+  box-shadow: 0 4px 16px rgba(66, 153, 225, 0.3),
+              0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 10;
+  opacity: 0;
+  transform: scale(0);
+  pointer-events: none;
+}
+
+.fab-toggle.visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.fab-toggle:hover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(66, 153, 225, 0.8);
+  box-shadow: 0 6px 24px rgba(66, 153, 225, 0.4),
+              0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.08);
+}
+
+.fab-toggle:active {
+  transform: scale(0.95);
 }
 
 #control-panel h3 {
