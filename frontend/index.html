@@ -1,28 +1,33 @@
 <!DOCTYPE html>
 <html lang="zh">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>JRA 宿敌网络可视化</title>
-  </head>
-  <body>
-  <div id="control-panel">
-      <h3>网络密度控制</h3>
+</head>
+<body>
+<div id="control-panel">
+    <h3>网络密度控制</h3>
 
-      <label for="weightSlider">最小同场交手次数: <span id="weightValue">2</span></label>
-      <input type="range" id="weightSlider" min="1" max="10" value="2" step="1">
+    <label for="weightSlider">最小同场交手次数: <span id="weightValue">2</span></label>
+    <input type="range" id="weightSlider" min="1" max="10" value="2" step="1">
 
-      <div class="toggle-container" style="margin-top: 15px;">
+    <label for="prizeSlider" style="margin-top: 15px;">最低生涯奖金: <span id="prizeValue"
+                                                                           style="color: #ffd700;">0</span>
+        万日元</label>
+    <input type="range" id="prizeSlider" min="0" max="100000" value="0" step="1000">
+
+    <div class="toggle-container" style="margin-top: 20px;">
         <input type="checkbox" id="showLabelsToggle" checked>
-        <label for="showLabelsToggle" style="display: inline; margin-left: 5px; cursor: pointer;">始终显示所有马名</label>
-      </div>
+        <label for="showLabelsToggle"
+               style="display: inline; margin-left: 5px; cursor: pointer;">始终显示所有马名</label>
+    </div>
 
-      <p class="hint">滑动以重新向数据库发起请求</p>
-  </div>
+    <p class="hint">滑动以重新向数据库发起请求</p>
+</div>
+<div id="tooltip" class="tooltip"></div>
+<div id="app"></div>
 
-  <div id="tooltip" class="tooltip"></div>
-  <div id="app"></div>
-
-  <script type="module" src="/src/main.ts"></script>
-  </body>
+<script type="module" src="/src/main.ts"></script>
+</body>
 </html>

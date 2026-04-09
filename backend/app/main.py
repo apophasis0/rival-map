@@ -15,12 +15,15 @@ app.add_middleware(
 
 from fastapi import FastAPI, Query
 from .graph_service import fetch_horse_network
-# ... 保持之前的 CORSMiddleware 配置不变 ...
+
 
 @app.get("/api/network")
-async def get_network(min_weight: int = Query(2, alias="minWeight")):
+async def get_network(
+    min_weight: int = Query(2, alias="minWeight"),
+    min_prize: float = Query(0.0, alias="minPrize") # 新增奖金参数
+):
     """
-    接收前端传来的参数，动态调整图谱密度
+    接收前端传来的参数，动态调整图谱密度和质量
     """
-    data = fetch_horse_network(min_intersections=min_weight)
+    data = fetch_horse_network(min_intersections=min_weight, min_prize=min_prize)
     return data

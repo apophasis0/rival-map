@@ -33,9 +33,9 @@ showLabelsToggle.addEventListener("change", (e) => {
     d3.selectAll(".node-label").style("opacity", isChecked ? 1 : 0);
 });
 
-async function renderNetwork(minWeight: number) {
+async function renderNetwork(minWeight: number, minPrize: number) {
     try {
-        const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}`);
+        const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}`);
         const graph: GraphData = await response.json();
 
         const width = window.innerWidth;
@@ -101,30 +101,8 @@ async function renderNetwork(minWeight: number) {
             )
             .force("charge", d3.forceManyBody().strength(-1500))
             .force("collide", d3.forceCollide().radius(d => getRadius(d.prize_score) + 4))
-            .force("y", d3.forceY(height / 2).strength(0.75))
-            .force("x", d3.forceX<GraphNode>(d => timeScaleX(d.active_year)).strength(0.65));
-
-        // --- 绘制背景时间基准线 ---
-        const decades = [1990, 2000, 2010, 2020];
-        const timeGrid = container.append("g").attr("class", "time-grid");
-
-        decades.forEach(year => {
-            timeGrid.append("line")
-                .attr("x1", timeScaleX(year))
-                .attr("x2", timeScaleX(year))
-                .attr("y1", -height * 2)
-                .attr("y2", height * 2)
-                .attr("stroke", "rgba(255, 255, 255, 0.1)")
-                .attr("stroke-dasharray", "4,4");
-
-            timeGrid.append("text")
-                .attr("x", timeScaleX(year) + 10)
-                .attr("y", 100)
-                .attr("fill", "rgba(255, 255, 255, 0.3)")
-                .attr("font-size", "24px")
-                .attr("font-weight", "bold")
-                .text(`${year}s`);
-        });
+            .force("y", d3.forceY(height / 2).strength(0.55))
+            .force("x", d3.forceX<GraphNode>(d => timeScaleX(d.active_year)).strength(0.3));
 
         // 构建标准的邻接表 (Adjacency List)
         const adjMap = new Map<string, Set<string>>();
@@ -282,17 +260,32 @@ async function renderNetwork(minWeight: number) {
     }
 }
 
-// 绑定滑动条事件
-const slider = document.getElementById("weightSlider") as HTMLInputElement;
+// --- 修改点 2：绑定两个滑动条事件 ---
+const weightSlider = document.getElementById("weightSlider") as HTMLInputElement;
 const weightValueDisplay = document.getElementById("weightValue") as HTMLSpanElement;
 
-slider.addEventListener("input", (e) => {
+const prizeSlider = document.getElementById("prizeSlider") as HTMLInputElement;
+const prizeValueDisplay = document.getElementById("prizeValue") as HTMLSpanElement;
+
+// 实时显示数值变化
+weightSlider.addEventListener("input", (e) => {
     weightValueDisplay.innerText = (e.target as HTMLInputElement).value;
 });
 
-slider.addEventListener("change", (e) => {
-    const minWeight = parseInt((e.target as HTMLInputElement).value, 10);
-    renderNetwork(minWeight);
+prizeSlider.addEventListener("input", (e) => {
+    prizeValueDisplay.innerText = (e.target as HTMLInputElement).value;
 });
 
-renderNetwork(parseInt(slider.value, 10));
+// 核心重绘逻辑：获取两个滑块的当前值
+function updateGraph() {
+    const minWeight = parseInt(weightSlider.value, 10);
+    const minPrize = parseInt(prizeSlider.value, 10);
+    renderNetwork(minWeight, minPrize);
+}
+
+// 只有当鼠标松开时才发请求重绘，避免卡顿
+weightSlider.addEventListener("change", updateGraph);
+prizeSlider.addEventListener("change", updateGraph);
+
+// 首次启动加载默认值
+updateGraph();
