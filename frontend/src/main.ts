@@ -329,9 +329,24 @@ function setHighlight(centerNodeId: string | null): void {
 
   const twoHop = getTwoHopNeighbors(currentGraph, centerNodeId);
 
-  // 分离 1-hop 边（直接与中心节点相连）和 2-hop 边（间接相连）
+  // 分离 1-hop 节点（直接与中心节点相连）和边
+  const oneHopNodes = new Set<string>();
   const oneHopEdges = new Set<string>();
   const twoHopEdges = new Set<string>();
+
+  currentGraph.forEachNeighbor(centerNodeId, (neighbor) => {
+    if (twoHop.has(neighbor)) {
+      oneHopNodes.add(neighbor);
+    }
+  });
+
+  // 预计算所有边的最大 weight，用于归一化
+  let maxEdgeWeight = 1;
+  currentGraph.forEachEdge((edge) => {
+    const weight = currentGraph!.getEdgeAttributes(edge).weight ?? 1;
+    if (weight > maxEdgeWeight) maxEdgeWeight = weight;
+  });
+
   currentGraph.forEachEdge((edge, _attrs, source, target) => {
     if (!twoHop.has(source) || !twoHop.has(target)) return;
     if (source === centerNodeId || target === centerNodeId) {
@@ -346,27 +361,72 @@ function setHighlight(centerNodeId: string | null): void {
     renderer.setSetting('labelDensity', 1); // 允许显示所有标签
   }
 
-  // 创建 nodeReducer 闭包
+  // 创建 nodeReducer 闭包：为不同层级的节点添加大小区分
   const nodeReducer = (node: string, data: Parameters<NonNullable<Settings['nodeReducer']>>[1]): Partial<NodeDisplayData> => {
     const isVisible = twoHop.has(node);
+    
+    if (!isVisible) {
+      return { ...data, hidden: true };
+    }
+    
+    // 节点可见，计算基础结果
+    let baseResult: Partial<NodeDisplayData> = { ...data, hidden: false };
+    
+    // 标签开关未勾选时，控制标签显示
     if (!showLabelsToggle.checked) {
-      // 未勾选标签开关：只在 hover 时显示相关节点的标签
-      return {
-        ...data,
-        hidden: !isVisible,
-        forceLabel: isVisible && node === centerNodeId ? true : data.forceLabel,
+      baseResult = {
+        ...baseResult,
+        forceLabel: node === centerNodeId ? true : data.forceLabel,
       };
     }
-    return { ...data, hidden: !isVisible };
+    
+    // 为不同层级添加大小区分（在原始 size 基础上放大）
+    const originalSize = data.size;
+    if (node === centerNodeId) {
+      // 中心节点：放大 2 倍
+      return {
+        ...baseResult,
+        size: originalSize * 2.0,
+        color: '#f59e0b', // 琥珀色
+      };
+    } else if (oneHopNodes.has(node)) {
+      // 1-hop 邻居：放大 1.4 倍
+      return {
+        ...baseResult,
+        size: originalSize * 1.4,
+      };
+    } else {
+      // 2-hop 邻居：保持原大小
+      return baseResult;
+    }
   };
 
-  // 创建 edgeReducer 闭包：1-hop 和 2-hop 边使用冷暖对比色
+  // 创建 edgeReducer 闭包：1-hop 和 2-hop 边使用多通道视觉区分
+  // 方案：极大的粗细差异 + 颜色对比
   const edgeReducer = (edge: string, data: Parameters<NonNullable<Settings['edgeReducer']>>[1]): Partial<EdgeDisplayData> => {
+    // 获取边的原始 weight 属性并归一化
+    const edgeWeight = currentGraph!.getEdgeAttributes(edge).weight ?? 1;
+    const normalizedWeight = edgeWeight / maxEdgeWeight;
+
     if (oneHopEdges.has(edge)) {
-      return { ...data, hidden: false, color: '#3b82f6', size: (data.size ?? 1) * 1.3 }; // 深蓝：直接相邻，粗且醒目
+      // 1-hop 边：深蓝色，非常粗
+      const size = 6.0 + 10.0 * normalizedWeight; // 范围约 6.0 ~ 16.0
+      return {
+        ...data,
+        hidden: false,
+        color: '#1e40af', // 深蓝
+        size,
+      };
     }
     if (twoHopEdges.has(edge)) {
-      return { ...data, hidden: false, color: '#8b5cf6', size: (data.size ?? 1) * 0.5 }; // 橘橙：间接相连，细且暖色
+      // 2-hop 边：浅灰色，极细（让它几乎融入背景）
+      const size = 0.4 + 0.2 * normalizedWeight; // 范围约 0.4 ~ 0.6
+      return {
+        ...data,
+        hidden: false,
+        color: '#e5e7eb', // 浅灰（接近背景色）
+        size,
+      };
     }
     return { ...data, hidden: true };
   };
