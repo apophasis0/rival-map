@@ -1,0 +1,11 @@
+[project]
+name = "rival-map-backend"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.135.3",
+    "pandas>=3.0.2",
+    "psycopg[binary]>=3.3.3",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.44.0",
+]
