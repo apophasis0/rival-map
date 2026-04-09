@@ -1,291 +1,492 @@
 import './style.css';
-import * as d3 from 'd3';
+import Graph from 'graphology';
+import Sigma from 'sigma';
+import FA2Layout from 'graphology-layout-forceatlas2/worker';
+import forceAtlas2 from 'graphology-layout-forceatlas2';
+import type { NodeDisplayData, EdgeDisplayData, SigmaNodeEventPayload } from 'sigma/types';
+import type { Settings } from 'sigma/settings';
 
-// 接口保持不变
-interface GraphNode extends d3.SimulationNodeDatum {
-    id: string;
-    prize_score: number | null;
-    name: string;
-    sex: string;
-    active_year: number;
+// ============ 类型定义 ============
+
+interface BackendNode {
+  id: string;
+  name: string;
+  sex: string;
+  prize_score: number | null;
+  active_year: number;
 }
 
-interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
-    source: string | GraphNode;
-    target: string | GraphNode;
-    weight: number;
+interface BackendLink {
+  source: string;
+  target: string;
+  weight: number;
 }
 
-interface GraphData {
-    nodes: GraphNode[];
-    links: GraphLink[];
+interface BackendGraphData {
+  nodes: BackendNode[];
+  links: BackendLink[];
 }
+
+// ============ 全局常量 ============
 
 const API_BASE_URL = 'http://localhost:8000/api/network';
 
-// 在文件末尾或全局作用域获取 DOM
-const showLabelsToggle = document.getElementById("showLabelsToggle") as HTMLInputElement;
+// ============ DOM 元素 ============
 
-// 监听勾选框变化，无需重新请求数据，直接通过 D3 操控透明度
-showLabelsToggle.addEventListener("change", (e) => {
-    const isChecked = (e.target as HTMLInputElement).checked;
-    // 如果勾选，显示所有标签；如果不勾选，暂时全部隐藏（等待 hover 触发）
-    d3.selectAll(".node-label").style("opacity", isChecked ? 1 : 0);
-});
+const appContainer = document.getElementById('app') as HTMLElement;
+const tooltipEl = document.getElementById('tooltip') as HTMLElement;
+const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
+const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
+const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
+const prizeSlider = document.getElementById('prizeSlider') as HTMLInputElement;
+const prizeValueDisplay = document.getElementById('prizeValue') as HTMLSpanElement;
 
-async function renderNetwork(minWeight: number, minPrize: number) {
-    try {
-        const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}`);
-        const graph: GraphData = await response.json();
+// ============ 工具函数 ============
 
-        const width = window.innerWidth;
-        const height = window.innerHeight;
-        const tooltip = d3.select("#tooltip");
+/** 根据奖金计算节点大小（Sigma 的 size 属性） */
+function getNodeSize(prize: number | null): number {
+  if (!prize) return 4;
+  return Math.max(4, Math.sqrt(prize) * 0.1);
+}
 
-        // 清空旧图层
-        d3.select("#app").selectAll("svg").remove();
+/** 根据奖金计算节点颜色（靛蓝 → 亮紫 → 橘橙 三段式），柔和明亮适配浅色背景 */
+function getNodeColorHex(prize: number | null, maxPrize: number): string {
+  const value = prize ?? 0;
+  const threshold = maxPrize * 0.3;
+  if (value <= threshold) {
+    const t = threshold === 0 ? 0 : value / threshold;
+    return lerpColorHex([99, 102, 241], [168, 85, 247], t);
+  } else {
+    const t = maxPrize === threshold ? 1 : (value - threshold) / (maxPrize - threshold);
+    return lerpColorHex([168, 85, 247], [249, 115, 22], t);
+  }
+}
 
-        const svg = d3.select("#app")
-            .append("svg")
-            .attr("width", width)
-            .attr("height", height)
-            .attr("viewBox", [0, 0, width, height]);
+/** 线性插值颜色，返回 #rrggbb */
+function lerpColorHex(a: [number, number, number], b: [number, number, number], t: number): string {
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
+}
 
-        // ==========================================
-        // 【新增缩放核心逻辑】
-        // 1. 创建一个包裹所有节点和连线的全局主容器
-        const container = svg.append("g")
-            .attr("class", "zoom-container");
+/** 获取两跳邻居集合 */
+function getTwoHopNeighbors(graph: Graph, centerId: string): Set<string> {
+  const result = new Set<string>();
+  result.add(centerId); // 0 跳：自身
 
-        // 2. 定义 D3 缩放行为
-        const zoom = d3.zoom<SVGSVGElement, unknown>()
-            .scaleExtent([0.1, 8]) // 限制缩放范围：最小 0.1 倍，最大 8 倍
-            .on("zoom", (event) => {
-                // 当监听到滚轮缩放或画布拖拽时，改变主容器的 transform 属性
-                container.attr("transform", event.transform);
-            });
+  const oneHop = new Set<string>();
+  graph.forEachNeighbor(centerId, (neighbor) => {
+    oneHop.add(neighbor);
+    result.add(neighbor);
+  });
 
-        // 3. 将缩放行为绑定到最外层 SVG 画布上，并禁用双击放大（保留双击用于其他交互）
-        svg.call(zoom)
-           .on("dblclick.zoom", null);
-        // ==========================================
+  // 2 跳
+  for (const neighborId of oneHop) {
+    graph.forEachNeighbor(neighborId, (twoHopNeighbor) => {
+      result.add(twoHopNeighbor);
+    });
+  }
 
-        // 计算当前数据集中奖金的最大值，用于颜色映射
-        const maxPrize = d3.max(graph.nodes, d => d.prize_score) || 1000;
+  return result;
+}
 
-        // 创建一个颜色比例尺 (从青色过渡到紫色再到金色)
-        const colorScale = d3.scaleLinear<string>()
-            .domain([0, maxPrize * 0.3, maxPrize]) // 三段式映射
-            .range(["#00f3ff", "#b026ff", "#ffd700"]); // 青 -> 紫 -> 金
+/** 根据性别代码返回中文描述 */
+function getSexText(sex: string): string {
+  if (sex === 'male') return '牡马 (公)';
+  if (sex === 'female') return '牝马 (母)';
+  if (sex === 'gelding') return '骟马 (阉)';
+  return sex;
+}
 
-        // 计算年份的最小值和最大值 (例如 1986 到 2024)
-        const minYear = d3.min(graph.nodes, d => d.active_year) || 1986;
-        const maxYear = d3.max(graph.nodes, d => d.active_year) || 2024;
+/** 格式化奖金文本 */
+function formatPrize(prize: number | null): string {
+  if (!prize) return '无数据';
+  return `约 ${Math.round(prize)} 万日元`;
+}
 
-        // 创建一个 X 轴坐标比例尺，把年份映射到屏幕宽度的 5% 到 95% 的区间
-        const timeScaleX = d3.scaleLinear()
-            .domain([minYear, maxYear])
-            .range([width * 0.05, width * 0.95]);
+// ============ 图数据构建 ============
 
-        // 辅助函数：计算节点半径 (被你不小心删掉了，现在补回)
-        function getRadius(prize: number | null): number {
-            if (!prize) return 4;
-            return Math.max(4, Math.sqrt(prize) * 0.1);
-        }
+/** 将后端返回的数据转换为 graphology Graph 实例 */
+function buildGraph(data: BackendGraphData, width: number, height: number): Graph {
+  const graph = new Graph();
 
-        // 配置物理引擎 (严格保留你修改过的参数)
-        const simulation = d3.forceSimulation<GraphNode>(graph.nodes)
-            .force("link", d3.forceLink<GraphNode, GraphLink>(graph.links)
-                .id(d => d.id)
-                .distance(d => Math.max(20, 200 / d.weight))
-            )
-            .force("charge", d3.forceManyBody().strength(-1500))
-            .force("collide", d3.forceCollide().radius(d => getRadius(d.prize_score) + 4))
-            .force("y", d3.forceY(height / 2).strength(0.55))
-            .force("x", d3.forceX<GraphNode>(d => timeScaleX(d.active_year)).strength(0.3));
+  if (data.nodes.length === 0) return graph;
 
-        // 构建标准的邻接表 (Adjacency List)
-        const adjMap = new Map<string, Set<string>>();
+  // 计算全局映射参数
+  const maxPrize = Math.max(...data.nodes.map((n) => n.prize_score ?? 0), 1000);
+  const nodeCount = data.nodes.length;
 
-        graph.links.forEach(d => {
-            const s = typeof d.source === "object" ? d.source.id : d.source;
-            const t = typeof d.target === "object" ? d.target.id : d.target;
+  // 添加节点 — 初始位置以屏幕中心为基点的小范围随机
+  // synchronous FA2 预热会重新分配位置，这里只需要避免全零导致算法异常
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const initSpread = Math.min(width, height) * 0.1;
+  for (const node of data.nodes) {
+    const x = centerX + (Math.random() - 0.5) * initSpread;
+    const y = centerY + (Math.random() - 0.5) * initSpread;
 
-            if (!adjMap.has(s)) adjMap.set(s, new Set());
-            if (!adjMap.has(t)) adjMap.set(t, new Set());
+    graph.addNode(node.id, {
+      x,
+      y,
+      size: getNodeSize(node.prize_score),
+      color: getNodeColorHex(node.prize_score, maxPrize),
+      label: node.name,
+      // 业务属性
+      name: node.name,
+      sex: node.sex,
+      prize_score: node.prize_score,
+      active_year: node.active_year,
+    });
+  }
 
-            adjMap.get(s)!.add(t);
-            adjMap.get(t)!.add(s);
-        });
+  // 添加边 — 动态过滤 + 自适应透明度/粗细
+  const maxWeight = Math.max(...data.links.map((l) => l.weight), 1);
 
-        // 辅助函数：判断目标节点是否在中心节点的“两跳”范围内
-        function isTwoHopNeighbor(centerId: string, targetId: string) {
-            // 0跳：自身
-            if (centerId === targetId) return true;
+  // 计算动态过滤阈值：边数过多时只保留重要边
+  const edgeBudget = Math.max(nodeCount * 5, 500); // 边的"预算"
+  let edgeVisibilityThreshold = 1;
+  if (data.links.length > edgeBudget) {
+    // 按 weight 降序排序，取前 edgeBudget 条边的最小 weight 作为阈值
+    const sortedWeights = [...data.links].map((l) => l.weight).sort((a, b) => b - a);
+    edgeVisibilityThreshold = sortedWeights[Math.min(edgeBudget - 1, sortedWeights.length - 1)];
+    console.log(`[Edge] 边数 ${data.links.length} 超过预算 ${edgeBudget}，动态过滤阈值: ${edgeVisibilityThreshold}`);
+  }
 
-            const neighbors = adjMap.get(centerId);
-            if (!neighbors) return false;
+  let visibleEdgeCount = 0;
+  for (const link of data.links) {
+    if (link.weight < edgeVisibilityThreshold) continue;
+    if (!graph.hasNode(link.source) || !graph.hasNode(link.target)) continue;
 
-            // 1跳：直接邻居
-            if (neighbors.has(targetId)) return true;
+    visibleEdgeCount++;
+    // 自适应透明度：weight 越高越不透明，使用幂函数使低 weight 边更淡
+    const normalizedWeight = link.weight / maxWeight;
+    const alpha = 0.03 + 0.77 * Math.pow(normalizedWeight, 0.6);
+    // 自适应粗细：低 weight 边几乎看不见
+    const size = 0.2 + 1.8 * normalizedWeight;
 
-            // 2跳：遍历所有直接邻居，看它们的邻居中是否包含目标节点
-            for (const neighborId of neighbors) {
-                const neighborsOfNeighbor = adjMap.get(neighborId);
-                if (neighborsOfNeighbor && neighborsOfNeighbor.has(targetId)) {
-                    return true;
-                }
-            }
+    graph.addEdge(link.source, link.target, {
+      weight: link.weight,
+      size,
+      color: '#2c5282',
+      alpha: Math.min(0.8, alpha),
+    });
+  }
 
-            return false;
-        }
+  console.log(`[Edge] 可见边数: ${visibleEdgeCount} / ${data.links.length} (阈值: ${edgeVisibilityThreshold})`);
 
-        // 绘制连线
-        const link = container.append("g")
-            .selectAll("line")
-            .data(graph.links)
-            .join("line")
-            .attr("class", "link")
-            .attr("stroke-width", d => Math.sqrt(d.weight))
-            .style("stroke-opacity", d => Math.min(0.8, 0.2 + d.weight * 0.05));
+  return graph;
+}
 
-        // 绘制节点组 (补回了丢失的 data().join() 逻辑)
-        const node = container.append("g")
-            .selectAll("g")
-            .data(graph.nodes)
-            .join("g")
-            .call(d3.drag<SVGGElement, GraphNode>()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended));
+// ============ Sigma 渲染器 ============
 
-        // 添加圆圈并修改 mouseover/mouseout 事件
-        // 添加圆圈并绑定鼠标事件
-        node.append("circle")
-            .attr("class", "node")
-            .attr("r", d => getRadius(d.prize_score))
-            .attr("fill", d => colorScale(d.prize_score || 0))
-            .on("mouseover", (event, d) => {
-                // 1. 渐进式两跳发光连线
-                link.style("stroke", l => {
-                        const sId = typeof l.source === "object" ? (l.source as GraphNode).id : l.source as string;
-                        const tId = typeof l.target === "object" ? (l.target as GraphNode).id : l.target as string;
-                        if (sId === d.id || tId === d.id) return "#00f3ff";
-                        if (isTwoHopNeighbor(d.id, sId) && isTwoHopNeighbor(d.id, tId)) return "#0033ff";
-                        return "#4299e1";
-                    })
-                    .style("stroke-opacity", l => {
-                        const sId = typeof l.source === "object" ? (l.source as GraphNode).id : l.source as string;
-                        const tId = typeof l.target === "object" ? (l.target as GraphNode).id : l.target as string;
-                        if (sId === d.id || tId === d.id) return 1;
-                        if (isTwoHopNeighbor(d.id, sId) && isTwoHopNeighbor(d.id, tId)) return 0.5;
-                        return 0.05;
-                    });
+let currentGraph: Graph | null = null;
+let renderer: Sigma | null = null;
+let fa2Layout: FA2Layout | null = null;
 
-                // 2. 动态点亮周围两跳的标签
-                if (!showLabelsToggle.checked) {
-                    d3.selectAll(".node-label")
-                      .style("opacity", (n: any) => isTwoHopNeighbor(d.id, n.id) ? 1 : 0);
-                }
+/** 创建并启动 Sigma 渲染器 */
+function initSigma(graph: Graph): Sigma {
+  // 销毁旧渲染器
+  if (renderer) {
+    renderer.kill();
+  }
 
-                // 3. 渲染 Tooltip 提示框
-                const prizeText = d.prize_score ? `约 ${Math.round(d.prize_score)} 万日元` : '无数据';
-                let sexText = d.sex === 'male' ? '牡马 (公)' : d.sex === 'female' ? '牝马 (母)' : d.sex === 'gelding' ? '骟马 (阉)' : d.sex;
+  // 停止旧布局
+  if (fa2Layout) {
+    fa2Layout.kill();
+    fa2Layout = null;
+  }
 
-                tooltip.style("opacity", 1)
-                       .html(`
-                           <strong>${d.name}</strong> 
-                           <span style="font-size: 12px; color: #a0aec0; font-weight: normal;">(ID: ${d.id})</span><br>
-                           <span style="color: #cbd5e1;">性别:</span> ${sexText}<br>
-                           <span style="color: #cbd5e1;">总奖金:</span> <span style="color: #ffd700;">${prizeText}</span>
-                       `)
-                       .style("left", (event.pageX + 20) + "px")
-                       .style("top", (event.pageY - 20) + "px");
-            })
-            .on("mouseout", () => {
-                // 1. 恢复连线的原本颜色和透明度
-                link.style("stroke", "#4299e1")
-                    .style("stroke-opacity", (d: any) => Math.min(0.8, 0.2 + d.weight * 0.05));
+  // 清空容器
+  appContainer.innerHTML = '';
 
-                // 2. 隐藏 Tooltip
-                tooltip.style("opacity", 0);
+  const sigmaInstance = new Sigma(graph, appContainer, {
+    // 隐藏边标签
+    renderEdgeLabels: false,
+    // 节点标签密度（0-1，值越大显示越多标签）
+    labelDensity: 0.15,
+    labelGridCellSize: 60,
+    labelRenderedSizeThreshold: 8,
+    // 节点标签样式
+    labelFont: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    labelSize: 12,
+    labelWeight: 'bold',
+    labelColor: { color: '#1a202c' },
+    // 自定义标签绘制：深色文字 + 浅色描边，确保在浅色背景下清晰可读
+    defaultDrawNodeLabel: (ctx, data, _settings) => {
+      if (!data.label) return;
+      const fontSize = _settings.labelSize;
+      ctx.font = `bold ${fontSize}px ${_settings.labelFont}`;
+      const x = data.x + data.size + 3;
+      const y = data.y + fontSize / 3;
+      // 白色描边
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(data.label, x, y);
+      // 深色文字
+      ctx.fillStyle = '#1a202c';
+      ctx.fillText(data.label, x, y);
+    },
+    // 缩放/平移
+    enableCameraZooming: true,
+    enableCameraPanning: true,
+    // 默认节点颜色
+    defaultNodeColor: '#4a5568',
+    defaultEdgeColor: '#dddddd',
+    defaultEdgeType: 'line',
+    defaultNodeType: 'circle',
+    // 节点大小参考
+    itemSizesReference: 'positions',
+  });
 
-                // 3. 恢复标签隐藏状态 (核心修复点)
-                if (!showLabelsToggle.checked) {
-                    // 如果全局开关是关的，鼠标移走后必须再次隐藏所有标签
-                    d3.selectAll(".node-label").style("opacity", 0);
-                } else {
-                    // 如果全局开关是开的，则保持全亮
-                    d3.selectAll(".node-label").style("opacity", 1);
-                }
-            });
+  return sigmaInstance;
+}
 
-        // 添加文字标签
-        node.append("text")
-            .attr("class", "node-label")
-            .attr("dx", d => getRadius(d.prize_score) + 4)
-            .attr("dy", 4)
-            .text(d => d.name)
-            .style("opacity", showLabelsToggle.checked ? 1 : 0);
+/** 启动 ForceAtlas2 布局（Synchronous 预热 + Worker 微调） */
+function startLayout(graph: Graph): void {
+  if (fa2Layout) {
+    fa2Layout.kill();
+  }
 
-        simulation.on("tick", () => {
-            link
-                .attr("x1", d => (d.source as GraphNode).x!)
-                .attr("y1", d => (d.source as GraphNode).y!)
-                .attr("x2", d => (d.target as GraphNode).x!)
-                .attr("y2", d => (d.target as GraphNode).y!);
+  const nodeCount = graph.order;
 
-            node.attr("transform", d => `translate(${d.x},${d.y})`);
-        });
+  // ---- 阶段 1：Synchronous FA2 预热 ----
+  // 根据节点数量动态决定迭代次数
+  const warmupIterations = nodeCount > 5000 ? 50 : nodeCount > 1000 ? 80 : 100;
+  const warmupSettings: Record<string, unknown> = {
+    gravity: 0.05,
+    scalingRatio: 15,
+    strongGravityMode: true,
+    barnesHutOptimize: true,       // 大规模图必须开启
+    barnesHutTheta: 0.8,           // 预热阶段用更大的 theta 加速
+    edgeWeightInfluence: 1,
+    slowDown: 1,                   // 预热不需要 slowDown
+  };
 
-        function dragstarted(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
-        }
+  console.log(`[FA2] 开始 synchronous 预热: ${warmupIterations} 迭代 (${nodeCount} 节点)`);
+  const warmupStart = performance.now();
 
-        function dragged(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>) {
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
-        }
+  // forceAtlas2.assign 直接修改图上的 x/y 属性
+  forceAtlas2.assign(graph, {
+    iterations: warmupIterations,
+    getEdgeWeight: 'weight',
+    settings: warmupSettings,
+  });
 
-        function dragended(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>) {
-            if (!event.active) simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
-        }
+  const warmupElapsed = performance.now() - warmupStart;
+  console.log(`[FA2] synchronous 预热完成: ${warmupElapsed.toFixed(0)}ms`);
 
-    } catch (error) {
-        console.error("加载真实图谱数据失败:", error);
+  // ---- 阶段 2：Worker FA2 持续微调 ----
+  const fineTuneSettings: Record<string, unknown> = {
+    gravity: 0.05,
+    scalingRatio: 15,
+    strongGravityMode: true,
+    barnesHutOptimize: nodeCount > 500,
+    barnesHutTheta: 0.6,
+    edgeWeightInfluence: 1,
+    slowDown: Math.max(3, 1 + Math.log(nodeCount)),
+    adjustSizes: true,
+  };
+
+  fa2Layout = new FA2Layout(graph, {
+    settings: fineTuneSettings,
+  });
+
+  fa2Layout.start();
+
+  // 大数据量：运行固定时间后停止，避免无限运行
+  // 小数据量：保持运行以允许用户拖拽后重新稳定
+  if (nodeCount > 2000) {
+    setTimeout(() => {
+      if (fa2Layout && fa2Layout.isRunning()) {
+        fa2Layout.stop();
+      }
+    }, 60000); // 60 秒后停止
+  }
+}
+
+// ============ 交互逻辑 ============
+
+/** 设置高亮状态 */
+function setHighlight(centerNodeId: string | null): void {
+  if (!renderer || !currentGraph) return;
+
+  if (centerNodeId === null) {
+    // 清除高亮
+    renderer.setSetting('nodeReducer', null);
+    renderer.setSetting('edgeReducer', null);
+    tooltipEl.style.opacity = '0';
+
+    // 如果标签开关未勾选，恢复低密度模式（隐藏所有标签）
+    if (!showLabelsToggle.checked) {
+      renderer.setSetting('labelDensity', 0);
+    } else {
+      renderer.setSetting('labelDensity', 0.15);
     }
+    return;
+  }
+
+  const twoHop = getTwoHopNeighbors(currentGraph, centerNodeId);
+
+  // 分离 1-hop 边（直接与中心节点相连）和 2-hop 边（间接相连）
+  const oneHopEdges = new Set<string>();
+  const twoHopEdges = new Set<string>();
+  currentGraph.forEachEdge((edge, _attrs, source, target) => {
+    if (!twoHop.has(source) || !twoHop.has(target)) return;
+    if (source === centerNodeId || target === centerNodeId) {
+      oneHopEdges.add(edge);
+    } else {
+      twoHopEdges.add(edge);
+    }
+  });
+
+  // 如果标签开关未勾选，hover 时动态显示相关标签
+  if (!showLabelsToggle.checked) {
+    renderer.setSetting('labelDensity', 1); // 允许显示所有标签
+  }
+
+  // 创建 nodeReducer 闭包
+  const nodeReducer = (node: string, data: Parameters<NonNullable<Settings['nodeReducer']>>[1]): Partial<NodeDisplayData> => {
+    const isVisible = twoHop.has(node);
+    if (!showLabelsToggle.checked) {
+      // 未勾选标签开关：只在 hover 时显示相关节点的标签
+      return {
+        ...data,
+        hidden: !isVisible,
+        forceLabel: isVisible && node === centerNodeId ? true : data.forceLabel,
+      };
+    }
+    return { ...data, hidden: !isVisible };
+  };
+
+  // 创建 edgeReducer 闭包：1-hop 和 2-hop 边使用冷暖对比色
+  const edgeReducer = (edge: string, data: Parameters<NonNullable<Settings['edgeReducer']>>[1]): Partial<EdgeDisplayData> => {
+    if (oneHopEdges.has(edge)) {
+      return { ...data, hidden: false, color: '#3b82f6', size: (data.size ?? 1) * 1.3 }; // 深蓝：直接相邻，粗且醒目
+    }
+    if (twoHopEdges.has(edge)) {
+      return { ...data, hidden: false, color: '#8b5cf6', size: (data.size ?? 1) * 0.5 }; // 橘橙：间接相连，细且暖色
+    }
+    return { ...data, hidden: true };
+  };
+
+  renderer.setSetting('nodeReducer', nodeReducer);
+  renderer.setSetting('edgeReducer', edgeReducer);
+  renderer.refresh();
 }
 
-// --- 修改点 2：绑定两个滑动条事件 ---
-const weightSlider = document.getElementById("weightSlider") as HTMLInputElement;
-const weightValueDisplay = document.getElementById("weightValue") as HTMLSpanElement;
+/** 显示 Tooltip */
+function showTooltip(nodeId: string, event: MouseEvent): void {
+  if (!currentGraph) return;
+  const attrs = currentGraph.getNodeAttributes(nodeId);
+  const prizeText = formatPrize(attrs.prize_score);
+  const sexText = getSexText(attrs.sex);
 
-const prizeSlider = document.getElementById("prizeSlider") as HTMLInputElement;
-const prizeValueDisplay = document.getElementById("prizeValue") as HTMLSpanElement;
-
-// 实时显示数值变化
-weightSlider.addEventListener("input", (e) => {
-    weightValueDisplay.innerText = (e.target as HTMLInputElement).value;
-});
-
-prizeSlider.addEventListener("input", (e) => {
-    prizeValueDisplay.innerText = (e.target as HTMLInputElement).value;
-});
-
-// 核心重绘逻辑：获取两个滑块的当前值
-function updateGraph() {
-    const minWeight = parseInt(weightSlider.value, 10);
-    const minPrize = parseInt(prizeSlider.value, 10);
-    renderNetwork(minWeight, minPrize);
+  tooltipEl.style.opacity = '1';
+  tooltipEl.innerHTML = `
+    <strong>${attrs.name}</strong>
+    <span style="font-size: 12px; color: #a0aec0; font-weight: normal;">(ID: ${nodeId})</span><br>
+    <span style="color: #cbd5e1;">性别:</span> ${sexText}<br>
+    <span style="color: #cbd5e1;">总奖金:</span> <span style="color: #ffd700;">${prizeText}</span>
+  `;
+  tooltipEl.style.left = (event.pageX + 20) + 'px';
+  tooltipEl.style.top = (event.pageY - 20) + 'px';
 }
 
-// 只有当鼠标松开时才发请求重绘，避免卡顿
-weightSlider.addEventListener("change", updateGraph);
-prizeSlider.addEventListener("change", updateGraph);
+// ============ 主渲染函数 ============
 
-// 首次启动加载默认值
+async function renderNetwork(minWeight: number, minPrize: number): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}`);
+    const data: BackendGraphData = await response.json();
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    // 构建 graphology 图
+    currentGraph = buildGraph(data, width, height);
+
+    if (currentGraph.order === 0) {
+      // 空图：清理渲染器和布局
+      if (renderer) {
+        renderer.kill();
+        renderer = null;
+      }
+      if (fa2Layout) {
+        fa2Layout.kill();
+        fa2Layout = null;
+      }
+      appContainer.innerHTML = '';
+      console.log('空图谱数据，无节点可渲染');
+      return;
+    }
+
+    // 初始化 Sigma 渲染器
+    renderer = initSigma(currentGraph);
+
+    // 绑定 hover 事件
+    renderer.on('enterNode', (event: SigmaNodeEventPayload) => {
+      setHighlight(event.node);
+      // 从 original 事件获取真实的 MouseEvent 以获取 page 坐标
+      const originalEvent = event.event.original;
+      if (originalEvent instanceof MouseEvent) {
+        showTooltip(event.node, originalEvent);
+      }
+    });
+
+    renderer.on('leaveNode', () => {
+      setHighlight(null);
+    });
+
+    // 启动 ForceAtlas2 布局
+    startLayout(currentGraph);
+
+    console.log(`Graph rendered: ${currentGraph.order} nodes, ${currentGraph.size} edges`);
+  } catch (error) {
+    console.error('加载图谱数据失败:', error);
+  }
+}
+
+// ============ 标签显示开关 ============
+
+showLabelsToggle.addEventListener('change', () => {
+  if (!renderer) return;
+  if (showLabelsToggle.checked) {
+    // 显示所有标签
+    renderer.setSetting('labelDensity', 0.15);
+  } else {
+    // 隐藏所有标签（等待 hover 触发）
+    renderer.setSetting('labelDensity', 0);
+  }
+  renderer.refresh();
+});
+
+// ============ 滑块事件绑定 ============
+
+weightSlider.addEventListener('input', (e) => {
+  weightValueDisplay.innerText = (e.target as HTMLInputElement).value;
+});
+
+prizeSlider.addEventListener('input', (e) => {
+  prizeValueDisplay.innerText = (e.target as HTMLInputElement).value;
+});
+
+function updateGraph(): void {
+  const minWeight = parseInt(weightSlider.value, 10);
+  const minPrize = parseInt(prizeSlider.value, 10);
+  renderNetwork(minWeight, minPrize);
+}
+
+weightSlider.addEventListener('change', updateGraph);
+prizeSlider.addEventListener('change', updateGraph);
+
+// 窗口大小变化时重新渲染
+window.addEventListener('resize', () => {
+  if (renderer) {
+    renderer.resize();
+  }
+});
+
+// 首次加载
 updateGraph();
