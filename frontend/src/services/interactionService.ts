@@ -79,15 +79,18 @@ function buildHighlightContext(graph: Graph, centerNodeId: string): HighlightCon
   const oneHopEdges = new Set<string>();
   const twoHopEdges = new Set<string>();
 
-  // 收集 1-hop 节点（跳过血统边）
-  graph.forEachNeighbor(centerNodeId, (neighbor, edge) => {
-    const edgeAttrs = graph.getEdgeAttributes(edge);
+  // 收集 1-hop 节点和边（跳过血统边）
+  for (const edgeId of graph.edges(centerNodeId)) {
+    const [source, target] = graph.extremities(edgeId);
+    const neighbor = source === centerNodeId ? target : source;
+    const edgeAttrs = graph.getEdgeAttributes(edgeId);
     const linkType = edgeAttrs.linkType as string | undefined;
     // 只统计宿敌边
     if (linkType !== 'sire' && linkType !== 'dam' && twoHop.has(neighbor)) {
       oneHopNodes.add(neighbor);
+      oneHopEdges.add(edgeId);
     }
-  });
+  }
 
   // 预计算最大边权重（仅统计宿敌边）
   let maxEdgeWeight = 1;
