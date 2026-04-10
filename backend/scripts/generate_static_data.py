@@ -35,7 +35,7 @@ class DecimalEncoder(json.JSONEncoder):
 
 WEIGHT_RANGE = range(1, 11)  # minWeight: 1~10
 PRIZE_VALUES = [0, 1000, 5000, 10000, 20000, 30000, 50000, 70000, 100000]  # minPrize (万円)
-MAX_RANK_VALUES = [18]  # 当前只有"不限"有意义
+MAX_RANK_VALUES = list(range(1, 19))  # maxRank: 1~18
 STRICT_MODES = [True, False]  # 严格/宽松
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "static_data" / "network"
