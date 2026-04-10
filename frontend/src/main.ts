@@ -57,14 +57,17 @@ const communityToggle = document.getElementById('communityToggle') as HTMLInputE
 const sireToggle = document.getElementById('sireToggle') as HTMLInputElement;
 const damToggle = document.getElementById('damToggle') as HTMLInputElement;
 const communityLegendEl = document.getElementById('communityLegend') as HTMLElement;
+const sidebarToggle = document.getElementById('sidebarToggle') as HTMLButtonElement;
+const infoTabBtn = document.getElementById('infoTabBtn') as HTMLButtonElement;
+const closeSidebarBtns = document.querySelectorAll('.sidebar-close-btn');
+const statNodesEl = document.getElementById('statNodes') as HTMLSpanElement;
+const statEdgesEl = document.getElementById('statEdges') as HTMLSpanElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
 const prizeSlider = document.getElementById('prizeSlider') as HTMLInputElement;
 const prizeValueDisplay = document.getElementById('prizeValue') as HTMLSpanElement;
 const rankSlider = document.getElementById('rankSlider') as HTMLInputElement;
 const rankValueDisplay = document.getElementById('rankValue') as HTMLSpanElement;
-const collapseBtn = document.getElementById('collapsePanel') as HTMLButtonElement;
-const fabToggle = document.getElementById('fabToggle') as HTMLButtonElement;
 const tooltipModeSelect = document.getElementById('tooltipModeSelect') as HTMLSelectElement;
 
 // ============ 主渲染函数 ============
@@ -92,9 +95,15 @@ async function renderNetwork(
       appState.cleanup();
       appContainer.innerHTML = '';
       communityLegendEl.style.display = 'none';
+      statNodesEl.textContent = '-';
+      statEdgesEl.textContent = '-';
       console.log('空图谱数据，无节点可渲染');
       return;
     }
+
+    // 更新统计信息
+    statNodesEl.textContent = String(graph.order);
+    statEdgesEl.textContent = String(graph.size);
 
     // 渲染社区图例（如果适用）
     renderCommunityLegend(communityLegendEl, communityResult, graph.order);
@@ -277,14 +286,22 @@ tooltipModeSelect.addEventListener('change', () => {
   localStorage.setItem('tooltipMode', mode);
 });
 
-// 面板折叠/展开
-collapseBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  panelService.toggle();
+// 侧边栏控制
+sidebarToggle.addEventListener('click', () => {
+  panelService.showSettings();
+  panelService.saveState();
 });
 
-fabToggle.addEventListener('click', () => {
-  panelService.toggle();
+infoTabBtn.addEventListener('click', () => {
+  panelService.showInfo();
+  panelService.saveState();
+});
+
+closeSidebarBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    panelService.close();
+    panelService.saveState();
+  });
 });
 
 // 年份布局

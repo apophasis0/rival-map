@@ -6,90 +6,133 @@
     <title>JRA 宿敌网络可视化</title>
 </head>
 <body>
-<div id="control-panel">
-    <button id="collapsePanel" class="collapse-btn" title="隐藏控制面板">
-        <svg viewBox="0 0 24 24" width="18" height="18">
-            <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
-        </svg>
-    </button>
-    
-    <h3>网络密度控制</h3>
 
-    <label for="weightSlider">最小同场交手次数: <span id="weightValue">2</span></label>
-    <input type="range" id="weightSlider" min="1" max="10" value="2" step="1">
-
-    <label for="prizeSlider" style="margin-top: 15px;">最低生涯奖金: <span id="prizeValue"
-                                                                           style="color: #ffd700;">0</span>
-        万日元</label>
-    <input type="range" id="prizeSlider" min="0" max="100000" value="0" step="1000">
-
-    <label for="rankSlider" style="margin-top: 15px;">G1最低名次: 前<span id="rankValue"
-                                                                          style="color: #2b6cb0; font-weight: 700;">不限</span></label>
-    <input type="range" id="rankSlider" min="1" max="18" value="18" step="1">
-    <small style="font-size: 11px; color: #718096; display: block; margin-top: 2px;">18 = 包含所有完赛马匹</small>
-
-    <div class="toggle-container" style="margin-top: 10px;">
-        <input type="checkbox" id="strictRankToggle" checked>
-        <label for="strictRankToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">严格模式（同场都达标才连线）</label>
+<!-- 侧边栏 -->
+<aside id="sidebar">
+    <!-- 窄图标栏 -->
+    <div class="sidebar-tab">
+        <button id="sidebarToggle" class="sidebar-tab-btn active" title="设置">
+            <svg viewBox="0 0 24 24" width="22" height="22">
+                <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z"/>
+            </svg>
+        </button>
+        <button id="infoTabBtn" class="sidebar-tab-btn" title="统计信息">
+            <svg viewBox="0 0 24 24" width="22" height="22">
+                <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+            </svg>
+        </button>
     </div>
 
-    <div class="toggle-container" style="margin-top: 20px;">
-        <input type="checkbox" id="showLabelsToggle" checked>
-        <label for="showLabelsToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">始终显示所有马名</label>
+    <!-- 可展开内容区 -->
+    <div id="sidebarContent" class="sidebar-content">
+        <!-- 设置面板 -->
+        <div id="settingsPanel" class="sidebar-panel">
+            <div class="sidebar-header">
+                <h3>控制面板</h3>
+                <button id="closeSidebar" class="sidebar-close-btn" title="收起">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <details open class="sidebar-section">
+                <summary>
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm21-1h-2V6h-2V4h-2V2h-2v2h2v2h2v2h2v2zm-4 13h2v-2h-2v2zM3 21h18v-2H3v2z"/></svg>
+                    网络密度
+                </summary>
+                <div class="section-body">
+                    <label for="weightSlider">最小同场交手次数: <span id="weightValue">2</span></label>
+                    <input type="range" id="weightSlider" min="1" max="10" value="2" step="1">
+
+                    <label for="prizeSlider" style="margin-top: 12px;">最低生涯奖金: <span id="prizeValue" style="color: #ffd700;">0</span> 万日元</label>
+                    <input type="range" id="prizeSlider" min="0" max="100000" value="0" step="1000">
+
+                    <label for="rankSlider" style="margin-top: 12px;">G1最低名次: 前<span id="rankValue" style="color: #2b6cb0; font-weight: 700;">不限</span></label>
+                    <input type="range" id="rankSlider" min="1" max="18" value="18" step="1">
+                    <small style="font-size: 11px; color: #718096; display: block; margin-top: 2px;">18 = 包含所有完赛马匹</small>
+
+                    <div class="toggle-container" style="margin-top: 10px;">
+                        <input type="checkbox" id="strictRankToggle" checked>
+                        <label for="strictRankToggle">严格模式（同场都达标才连线）</label>
+                    </div>
+                </div>
+            </details>
+
+            <details class="sidebar-section">
+                <summary>
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    显示选项
+                </summary>
+                <div class="section-body">
+                    <div class="toggle-container">
+                        <input type="checkbox" id="showLabelsToggle" checked>
+                        <label for="showLabelsToggle">始终显示所有马名</label>
+                    </div>
+                    <div class="toggle-container" style="margin-top: 8px;">
+                        <input type="checkbox" id="yearLayoutToggle">
+                        <label for="yearLayoutToggle">按年份布局（旧→新 = 左→右）</label>
+                    </div>
+                    <div class="toggle-container" style="margin-top: 8px;">
+                        <input type="checkbox" id="communityToggle">
+                        <label for="communityToggle">社区发现染色（Louvain 算法）</label>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <label for="tooltipModeSelect" style="font-size: 12px; color: #718096;">Tooltip 显示方式</label>
+                        <select id="tooltipModeSelect" class="sidebar-select">
+                            <option value="follow">跟随鼠标</option>
+                            <option value="fixed">固定右下角</option>
+                            <option value="hidden">不显示</option>
+                        </select>
+                    </div>
+                </div>
+            </details>
+
+            <details class="sidebar-section">
+                <summary>
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/></svg>
+                    血统关系
+                </summary>
+                <div class="section-body">
+                    <div class="toggle-container">
+                        <input type="checkbox" id="sireToggle">
+                        <label for="sireToggle"><span class="line-indicator sire"></span>显示父系血脉（父→子）</label>
+                    </div>
+                    <div class="toggle-container" style="margin-top: 8px;">
+                        <input type="checkbox" id="damToggle">
+                        <label for="damToggle"><span class="line-indicator dam"></span>显示母系血脉（母→子）</label>
+                    </div>
+                </div>
+            </details>
+
+            <p class="hint">滑动滑块以重新向数据库发起请求</p>
+        </div>
+
+        <!-- 信息面板 -->
+        <div id="infoPanel" class="sidebar-panel hidden">
+            <div class="sidebar-header">
+                <h3>图谱统计</h3>
+                <button id="closeSidebar" class="sidebar-close-btn" title="收起">
+                    <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="communityLegend" class="community-legend"></div>
+            <div id="graphStats" class="graph-stats">
+                <div class="stat-row">
+                    <span class="stat-label">节点数</span>
+                    <span class="stat-value" id="statNodes">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">边数</span>
+                    <span class="stat-value" id="statEdges">-</span>
+                </div>
+            </div>
+        </div>
     </div>
+</aside>
 
-    <div class="toggle-container" style="margin-top: 15px;">
-        <input type="checkbox" id="yearLayoutToggle">
-        <label for="yearLayoutToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">按年份布局（旧→新 = 左→右）</label>
-    </div>
-
-    <div class="toggle-container" style="margin-top: 15px;">
-        <input type="checkbox" id="communityToggle">
-        <label for="communityToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">社区发现染色（Louvain 算法）</label>
-    </div>
-
-    <div class="toggle-container" style="margin-top: 15px;">
-        <input type="checkbox" id="sireToggle">
-        <label for="sireToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">
-            <span style="display:inline-block;width:12px;height:2px;background:#4f46e5;vertical-align:middle;margin-right:3px;"></span>
-            显示父系血脉（父→子）
-        </label>
-    </div>
-
-    <div class="toggle-container" style="margin-top: 10px;">
-        <input type="checkbox" id="damToggle">
-        <label for="damToggle"
-               style="display: inline; margin-left: 5px; cursor: pointer;">
-            <span style="display:inline-block;width:12px;height:2px;background:#ec4899;vertical-align:middle;margin-right:3px;"></span>
-            显示母系血脉（母→子）
-        </label>
-    </div>
-
-    <div id="communityLegend" class="community-legend"></div>
-
-    <div style="margin-top: 15px;">
-        <label for="tooltipModeSelect" style="font-size: 13px; color: #4a5568;">Tooltip 显示方式</label>
-        <select id="tooltipModeSelect" class="tooltip-mode-select">
-            <option value="follow">跟随鼠标</option>
-            <option value="fixed">固定右下角</option>
-            <option value="hidden">不显示</option>
-        </select>
-    </div>
-
-    <p class="hint">滑动以重新向数据库发起请求</p>
-</div>
-
-<!-- FAB 浮动按钮（默认隐藏） -->
-<button id="fabToggle" class="fab-toggle" title="显示控制面板">
-    <svg viewBox="0 0 24 24" width="24" height="24">
-        <path fill="currentColor" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm21-1h-2V6h-2V4h-2V2h-2v2h2v2h2v2h2v2zm-4 13h2v-2h-2v2zM3 21h18v-2H3v2z"/>
-    </svg>
-</button>
 <div id="tooltip" class="tooltip"></div>
 <div id="app"></div>
 
