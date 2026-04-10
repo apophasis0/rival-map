@@ -79,6 +79,7 @@ export const SIGMA_DEFAULT_SETTINGS = {
   labelColor: { color: '#1a202c' },
   enableCameraZooming: true,
   enableCameraPanning: true,
+  enableEdgeEvents: true,  // 启用边 hover 事件
   defaultNodeColor: '#4a5568',
   defaultEdgeColor: '#dddddd',
   defaultEdgeType: 'line',
