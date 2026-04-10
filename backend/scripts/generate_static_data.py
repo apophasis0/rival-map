@@ -29,6 +29,8 @@ import time
 from decimal import Decimal
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # 确保能导入 app 模块
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -162,7 +164,7 @@ def generate_all(upload_r2: bool = False):
 
                         # 跳过已有文件（断点续传）
                         if filepath.exists():
-                            existing = json.loads(filepath.read_text())
+                            existing = json.loads(filepath.read_text(encoding='utf-8'))
                             node_count = len(existing.get("nodes", []))
                             print(f"  [{count}/{total}] ⏭️  跳过 (已有): w={weight}, p={prize}, r={max_rank}, s={strict} → {node_count} nodes")
                             continue
@@ -192,7 +194,7 @@ def generate_all(upload_r2: bool = False):
         from app.graph_service import fetch_pedigree_links
         all_node_ids = set()
         for f in OUTPUT_DIR.glob("*.json"):
-            d = json.loads(f.read_text())
+            d = json.loads(f.read_text(encoding='utf-8'))
             for n in d.get("nodes", []):
                 all_node_ids.add(n["id"])
 
@@ -229,4 +231,5 @@ if __name__ == "__main__":
         help="生成完成后自动上传到 Cloudflare R2",
     )
     args = parser.parse_args()
+    load_dotenv()
     generate_all(upload_r2=args.upload_r2)
