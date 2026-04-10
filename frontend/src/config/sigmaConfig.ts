@@ -45,7 +45,7 @@ export const EDGE_SIZE_CONFIG = {
 
 /** 默认边配置 */
 export const DEFAULT_EDGE_CONFIG = {
-  color: '#4e74a4',
+  color: '#d0d0d0',
   alphaBase: 0.03,
   alphaScale: 0.77,
   alphaExponent: 0.6,
