@@ -246,3 +246,56 @@ input[type=range]::-webkit-slider-thumb {
   color: #2b6cb0;
   font-size: 16px;
 }
+
+/* --- 社区图例 --- */
+.community-legend {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(66, 153, 225, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #4a5568;
+  display: none;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.legend-title {
+  font-weight: 600;
+  color: #2b6cb0;
+  margin-bottom: 8px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.legend-color {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.legend-label {
+  flex: 1;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.legend-count {
+  font-size: 11px;
+  color: #718096;
+  white-space: nowrap;
+}

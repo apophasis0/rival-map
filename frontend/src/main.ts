@@ -7,6 +7,7 @@ import { initSigma, startLayout } from './services/rendererService';
 import { setHighlight, showTooltip } from './services/interactionService';
 import type { BackendGraphData } from './types';
 import type { SigmaNodeEventPayload } from 'sigma/types';
+import { renderCommunityLegend } from './utils/communityUI';
 
 // ============ 全局常量 ============
 
@@ -18,6 +19,8 @@ const appContainer = document.getElementById('app') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
 const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
 const strictRankToggle = document.getElementById('strictRankToggle') as HTMLInputElement;
+const communityToggle = document.getElementById('communityToggle') as HTMLInputElement;
+const communityLegendEl = document.getElementById('communityLegend') as HTMLElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
 const prizeSlider = document.getElementById('prizeSlider') as HTMLInputElement;
@@ -29,7 +32,13 @@ const fabToggle = document.getElementById('fabToggle') as HTMLButtonElement;
 
 // ============ 主渲染函数 ============
 
-async function renderNetwork(minWeight: number, minPrize: number, maxRank: number, strictMode: boolean): Promise<void> {
+async function renderNetwork(
+  minWeight: number,
+  minPrize: number,
+  maxRank: number,
+  strictMode: boolean,
+  useCommunityMode: boolean,
+): Promise<void> {
   try {
     const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}`);
     const data: BackendGraphData = await response.json();
@@ -39,14 +48,18 @@ async function renderNetwork(minWeight: number, minPrize: number, maxRank: numbe
     const useYearLayout = yearLayoutToggle.checked;
 
     // 构建图（initRenderer 内部会设置 appState.graph）
-    const graph = buildGraph(data, width, height, useYearLayout);
+    const { graph, communityResult } = buildGraph(data, width, height, useYearLayout, useCommunityMode);
 
     if (graph.order === 0) {
       appState.cleanup();
       appContainer.innerHTML = '';
+      communityLegendEl.style.display = 'none';
       console.log('空图谱数据，无节点可渲染');
       return;
     }
+
+    // 渲染社区图例（如果适用）
+    renderCommunityLegend(communityLegendEl, communityResult, graph.order);
 
     // 初始化渲染器（包含事件绑定）
     initRenderer(graph);
@@ -105,8 +118,9 @@ function updateGraph(): void {
   const minPrize = parseInt(prizeSlider.value, 10);
   const maxRank = parseInt(rankSlider.value, 10) || 18;
   const strictMode = strictRankToggle.checked;
-  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}`);
-  renderNetwork(minWeight, minPrize, maxRank, strictMode);
+  const useCommunityMode = communityToggle.checked;
+  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}`);
+  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode);
 }
 
 weightSlider.addEventListener('change', updateGraph);
@@ -120,6 +134,7 @@ rankSlider.addEventListener('input', (e) => {
 
 rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
+communityToggle.addEventListener('change', updateGraph);
 
 // 面板折叠/展开
 collapseBtn.addEventListener('click', (e) => {

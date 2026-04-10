@@ -5,6 +5,7 @@ import type { Settings } from 'sigma/settings';
 import { appState } from '../state/appState';
 import { getTwoHopNeighbors } from '../algorithms/graph';
 import { getSexText, formatPrize } from '../utils/formatters';
+import { COMMUNITY_LABELS } from '../utils/communityUI';
 import {
   HIGHLIGHT_COLORS,
   NODE_SIZE_MULTIPLIERS,
@@ -133,7 +134,7 @@ function createNodeReducer(context: HighlightContext): (node: string, data: Para
       return {
         ...baseResult,
         size: originalSize * NODE_SIZE_MULTIPLIERS.centerNode,
-        color: HIGHLIGHT_COLORS.centerNode,
+        // 保留节点原有的颜色，不覆盖
       };
     } else if (context.oneHopNodes.has(node)) {
       return {
@@ -185,12 +186,20 @@ export function showTooltip(nodeId: string, event: MouseEvent): void {
   const prizeText = formatPrize(attrs.prize_score);
   const sexText = getSexText(attrs.sex);
 
+  // 社区信息
+  let communityHtml = '';
+  if (attrs.community !== null && attrs.community !== undefined) {
+    const communityLabel = COMMUNITY_LABELS[attrs.community] ?? `Community #${attrs.community}`;
+    communityHtml = `<br><span style="color: #cbd5e1;">派系:</span> <span style="color: ${attrs.color}; font-weight: 600;">${communityLabel}</span>`;
+  }
+
   tooltipEl.style.opacity = '1';
   tooltipEl.innerHTML = `
     <strong>${attrs.name}</strong>
     <span style="font-size: 12px; color: #a0aec0; font-weight: normal;">(ID: ${nodeId})</span><br>
     <span style="color: #cbd5e1;">性别:</span> ${sexText}<br>
     <span style="color: #cbd5e1;">总奖金:</span> <span style="color: #ffd700;">${prizeText}</span>
+    ${communityHtml}
   `;
   tooltipEl.style.left = (event.pageX + 20) + 'px';
   tooltipEl.style.top = (event.pageY - 20) + 'px';

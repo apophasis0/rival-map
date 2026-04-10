@@ -1,6 +1,7 @@
 import Graph from 'graphology';
 import type { BackendGraphData, BackendNode } from '../types';
 import { getNodeSize, getNodeColorHex } from '../utils/color';
+import { detectCommunities, getCommunityColorHex, getCommunityStats } from '../utils/community';
 import {
   NODE_INIT_CONFIG,
   DEFAULT_EDGE_CONFIG,
@@ -8,6 +9,12 @@ import {
 } from '../config/sigmaConfig';
 
 // ============ 图数据构建 ============
+
+/** 社区检测结果 */
+export interface CommunityResult {
+  communities: Record<string, number> | null;
+  stats: Array<{ id: number; count: number; color: string }> | null;
+}
 
 /** 计算年份布局的 X 坐标 */
 function calculateYearLayoutX(node: BackendNode, minYear: number, yearRange: number, usableWidth: number, padding: number): number {
@@ -26,10 +33,17 @@ function calculateDefaultPosition(centerX: number, centerY: number, initSpread: 
 }
 
 /** 将后端返回的数据转换为 graphology Graph 实例 */
-export function buildGraph(data: BackendGraphData, width: number, height: number, useYearLayout: boolean): Graph {
+export function buildGraph(
+  data: BackendGraphData,
+  width: number,
+  height: number,
+  useYearLayout: boolean,
+  useCommunityMode: boolean = false,
+): { graph: Graph; communityResult: CommunityResult } {
   const graph = new Graph();
+  let communityResult: CommunityResult = { communities: null, stats: null };
 
-  if (data.nodes.length === 0) return graph;
+  if (data.nodes.length === 0) return { graph, communityResult };
 
   // 计算全局映射参数
   const maxPrize = Math.max(...data.nodes.map((n) => n.prize_score ?? 0), 1000);
@@ -78,13 +92,34 @@ export function buildGraph(data: BackendGraphData, width: number, height: number
       sex: node.sex,
       prize_score: node.prize_score,
       active_year: node.active_year,
+      community: null as number | null,
     });
   }
 
   // 添加边 — 动态过滤 + 自适应透明度/粗细
   addEdges(graph, data, nodeCount);
 
-  return graph;
+  // 社区检测（必须在边添加之后运行，因为 Louvain 依赖边的权重）
+  if (useCommunityMode) {
+    const communities = detectCommunities(graph);
+    communityResult = {
+      communities,
+      stats: communities ? getCommunityStats(communities) : null,
+    };
+
+    // 如果检测到了社区，重新为节点分配颜色
+    if (communities) {
+      graph.forEachNode((nodeId) => {
+        const community = communities[nodeId];
+        if (community !== undefined) {
+          graph.setNodeAttribute(nodeId, 'color', getCommunityColorHex(community));
+          graph.setNodeAttribute(nodeId, 'community', community);
+        }
+      });
+    }
+  }
+
+  return { graph, communityResult };
 }
 
 /** 添加边到图中 */
