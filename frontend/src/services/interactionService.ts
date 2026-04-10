@@ -17,8 +17,9 @@ import {
 const tooltipEl = document.getElementById('tooltip') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
 
-// Tooltip 显示模式
+// Tooltip 显示模式和类型
 let tooltipMode: 'follow' | 'fixed' | 'hidden' = 'follow';
+let currentTooltipType: 'node' | 'edge' | null = null; // 当前显示的是节点还是边的 tooltip
 
 export function setTooltipMode(mode: 'follow' | 'fixed' | 'hidden'): void {
   tooltipMode = mode;
@@ -228,4 +229,45 @@ export function showTooltip(nodeId: string, event: MouseEvent): void {
     tooltipEl.style.right = '20px';
     tooltipEl.style.bottom = '20px';
   }
+
+  currentTooltipType = 'node';
+}
+
+/** 显示边的权重 Tooltip */
+export function showEdgeTooltip(edgeId: string, event: MouseEvent): void {
+  if (tooltipMode === 'hidden') return;
+
+  const graph = appState.graph;
+  if (!graph) return;
+
+  const edgeAttrs = graph.getEdgeAttributes(edgeId);
+  const [source, target] = graph.extremities(edgeId);
+  const sourceAttrs = graph.getNodeAttributes(source);
+  const targetAttrs = graph.getNodeAttributes(target);
+  const weight = edgeAttrs.weight ?? 1;
+
+  tooltipEl.innerHTML = `
+    <strong>${sourceAttrs.name ?? source} ←→ ${targetAttrs.name ?? target}</strong><br>
+    <span style="color: #cbd5e1;">共同参赛：</span><span style="color: #ffd700; font-weight: 600; font-size: 16px;">${weight} 次</span>
+  `;
+  tooltipEl.style.opacity = '1';
+
+  // 边 tooltip 始终跟随鼠标，不使用固定模式
+  tooltipEl.classList.remove('tooltip-fixed');
+  tooltipEl.style.left = (event.pageX + 20) + 'px';
+  tooltipEl.style.top = (event.pageY - 20) + 'px';
+  tooltipEl.style.right = 'auto';
+  tooltipEl.style.bottom = 'auto';
+
+  currentTooltipType = 'edge';
+}
+
+/** 隐藏边的 Tooltip */
+export function hideEdgeTooltip(): void {
+  // 如果当前显示的是边的 tooltip，则隐藏
+  if (currentTooltipType === 'edge') {
+    tooltipEl.style.opacity = '0';
+    currentTooltipType = null;
+  }
+  // 如果是节点的，不做处理（由 leaveNode 处理）
 }

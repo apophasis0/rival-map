@@ -4,7 +4,7 @@ import { appState } from './state/appState';
 import { panelService } from './services/panelService';
 import { buildGraph } from './services/graphBuilder';
 import { initSigma, startLayout } from './services/rendererService';
-import { setHighlight, showTooltip, setTooltipMode } from './services/interactionService';
+import { setHighlight, showTooltip, showEdgeTooltip, hideEdgeTooltip, setTooltipMode } from './services/interactionService';
 import type { BackendGraphData } from './types';
 import type { SigmaNodeEventPayload } from 'sigma/types';
 import { renderCommunityLegend } from './utils/communityUI';
@@ -108,7 +108,7 @@ async function renderNetwork(
 function initRenderer(graph: Graph): void {
   const renderer = initSigma(graph);
 
-  // 绑定 hover 事件
+  // 绑定节点 hover 事件
   renderer.on('enterNode', (event: SigmaNodeEventPayload) => {
     setHighlight(event.node);
     const originalEvent = event.event.original;
@@ -119,6 +119,18 @@ function initRenderer(graph: Graph): void {
 
   renderer.on('leaveNode', () => {
     setHighlight(null);
+  });
+
+  // 绑定边 hover 事件（显示权重）
+  renderer.on('enterEdge', (event: { edge: string; event: { original?: Event } }) => {
+    const originalEvent = event.event.original;
+    if (originalEvent instanceof MouseEvent) {
+      showEdgeTooltip(event.edge, originalEvent);
+    }
+  });
+
+  renderer.on('leaveEdge', () => {
+    hideEdgeTooltip();
   });
 }
 
