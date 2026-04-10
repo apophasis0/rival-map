@@ -244,12 +244,32 @@ export function showEdgeTooltip(edgeId: string, event: MouseEvent): void {
   const [source, target] = graph.extremities(edgeId);
   const sourceAttrs = graph.getNodeAttributes(source);
   const targetAttrs = graph.getNodeAttributes(target);
+  const linkType = edgeAttrs.linkType as string | undefined;
   const weight = edgeAttrs.weight ?? 1;
 
-  tooltipEl.innerHTML = `
-    <strong>${sourceAttrs.name ?? source} ←→ ${targetAttrs.name ?? target}</strong><br>
-    <span style="color: #cbd5e1;">共同参赛：</span><span style="color: #ffd700; font-weight: 600; font-size: 16px;">${weight} 次</span>
-  `;
+  let html = '';
+  if (linkType === 'sire') {
+    html = `
+      <strong>${sourceAttrs.name ?? source}</strong>
+      <span style="color: #4f46e5; font-size: 16px;"> → </span>
+      <strong>${targetAttrs.name ?? target}</strong><br>
+      <span style="color: #4f46e5; font-weight: 600;">⬥ 父子关系</span>
+    `;
+  } else if (linkType === 'dam') {
+    html = `
+      <strong>${sourceAttrs.name ?? source}</strong>
+      <span style="color: #ec4899; font-size: 16px;"> → </span>
+      <strong>${targetAttrs.name ?? target}</strong><br>
+      <span style="color: #ec4899; font-weight: 600;">⬥ 母子关系</span>
+    `;
+  } else {
+    html = `
+      <strong>${sourceAttrs.name ?? source} ←→ ${targetAttrs.name ?? target}</strong><br>
+      <span style="color: #cbd5e1;">共同参赛：</span><span style="color: #ffd700; font-weight: 600; font-size: 16px;">${weight} 次</span>
+    `;
+  }
+
+  tooltipEl.innerHTML = html;
   tooltipEl.style.opacity = '1';
 
   // 边 tooltip 始终跟随鼠标，不使用固定模式

@@ -23,18 +23,19 @@ async function fetchNetworkData(
   minPrize: number,
   maxRank: number,
   strictMode: boolean,
+  includePedigree: boolean,
 ): Promise<BackendGraphData> {
   if (import.meta.env.DEV) {
     // 开发模式：调用后端 API
     const response = await fetch(
-      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}`,
+      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includePedigree=${includePedigree}`,
     );
     if (!response.ok) {
       throw new Error(`后端请求失败: ${response.status} ${response.statusText}`);
     }
     return response.json();
   } else {
-    // 生产模式：加载静态 JSON
+    // 生产模式：加载静态 JSON（暂不支持血统数据）
     const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
     const response = await fetch(`${API_URL}/${filename}`);
     if (!response.ok) {
@@ -51,6 +52,7 @@ const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInpu
 const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
 const strictRankToggle = document.getElementById('strictRankToggle') as HTMLInputElement;
 const communityToggle = document.getElementById('communityToggle') as HTMLInputElement;
+const pedigreeToggle = document.getElementById('pedigreeToggle') as HTMLInputElement;
 const communityLegendEl = document.getElementById('communityLegend') as HTMLElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
@@ -70,9 +72,10 @@ async function renderNetwork(
   maxRank: number,
   strictMode: boolean,
   useCommunityMode: boolean,
+  usePedigreeMode: boolean,
 ): Promise<void> {
   try {
-    const data = await fetchNetworkData(minWeight, minPrize, maxRank, strictMode);
+    const data = await fetchNetworkData(minWeight, minPrize, maxRank, strictMode, usePedigreeMode);
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -162,8 +165,9 @@ function updateGraph(): void {
   const maxRank = parseInt(rankSlider.value, 10) || 18;
   const strictMode = strictRankToggle.checked;
   const useCommunityMode = communityToggle.checked;
-  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}`);
-  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode);
+  const usePedigreeMode = pedigreeToggle.checked;
+  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, pedigreeMode=${usePedigreeMode}`);
+  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, usePedigreeMode);
 }
 
 weightSlider.addEventListener('change', updateGraph);
@@ -178,6 +182,7 @@ rankSlider.addEventListener('input', (e) => {
 rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
 communityToggle.addEventListener('change', updateGraph);
+pedigreeToggle.addEventListener('change', updateGraph);
 
 // Tooltip 显示模式切换
 tooltipModeSelect.addEventListener('change', () => {

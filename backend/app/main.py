@@ -5,7 +5,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import get_db_connection, init_db_pool, close_db_pool
-from .graph_service import fetch_horse_network
+from .graph_service import fetch_horse_network, fetch_pedigree_links
 
 logger = logging.getLogger("rival_map")
 logging.basicConfig(level=logging.INFO)
@@ -70,7 +70,8 @@ async def get_network(
     min_weight: int = Query(2, alias="minWeight"),
     min_prize: float = Query(0.0, alias="minPrize"),
     max_rank: int = Query(18, alias="maxRank"),
-    strict_mode: bool = Query(True, alias="strictMode")
+    strict_mode: bool = Query(True, alias="strictMode"),
+    include_pedigree: bool = Query(False, alias="includePedigree")
 ):
     """
     接收前端传来的参数，动态调整图谱密度和质量
@@ -78,6 +79,7 @@ async def get_network(
     min_prize: 最低奖金阈值（万円）
     max_rank: 最低名次阈值（kakutei_jyuni <= max_rank）
     strict_mode: 名次过滤模式（True=严格模式，False=宽松模式）
+    include_pedigree: 是否包含血统关系边
     """
     data = fetch_horse_network(
         min_intersections=min_weight,
@@ -85,4 +87,17 @@ async def get_network(
         max_rank=max_rank,
         strict_rank_mode=strict_mode
     )
+
+    # 如果需要血统边，查询并添加到 links 中
+    if include_pedigree and data["nodes"]:
+        node_ids = [n["id"] for n in data["nodes"]]
+        pedigree_links = fetch_pedigree_links(node_ids)
+
+        # 为宿敌边添加 linkType
+        for link in data["links"]:
+            link["linkType"] = "rival"
+
+        # 合并两种边
+        data["links"].extend(pedigree_links)
+
     return data

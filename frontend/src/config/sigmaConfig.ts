@@ -43,6 +43,20 @@ export const EDGE_SIZE_CONFIG = {
   twoHopEdge: { base: 0.5, scale: 0.3 },   // 范围 0.5 ~ 0.8
 } as const;
 
+/** 血统边样式配置（颜色区分） */
+export const PEDIGREE_EDGE_CONFIG = {
+  sire: {
+    color: '#4f46e5',   // 父系：靛蓝色（比宿敌边深）
+    size: 1.0,
+    alpha: 0.5,
+  },
+  dam: {
+    color: '#ec4899',   // 母系：粉色
+    size: 1.0,
+    alpha: 0.5,
+  },
+} as const;
+
 /** 默认边配置 */
 export const DEFAULT_EDGE_CONFIG = {
   color: '#d0d0d0',

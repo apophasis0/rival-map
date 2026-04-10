@@ -14,6 +14,52 @@ def _has_materialized_views(conn):
         return False
 
 
+def fetch_pedigree_links(node_ids: list[str]) -> list[dict]:
+    """
+    查询给定节点 ID 列表中马匹的血统关系（父子/母子）
+    仅返回 source 和 target 都在 node_ids 中的边
+
+    返回: [{ source: parent_ketto_num, target: child_ketto_num, linkType: 'sire'|'dam' }]
+    """
+    if not node_ids:
+        return []
+
+    with get_db_connection() as conn:
+        # 从 race_umas 获取每匹马的父/母 hansyoku_num 数组
+        # PostgreSQL 数组 1-indexed: [1]=父, [2]=母
+        query = """
+                 SELECT DISTINCT ON (ru.ketto_num, parent_type.ketto_num)
+                        ru.ketto_num                                            AS child,
+                        parent_type.ketto_num                                   AS parent,
+                        parent_type.parent_type
+                 FROM race_umas ru
+                          LEFT JOIN LATERAL (
+                     SELECT h.ketto_num, 'sire' AS parent_type
+                     FROM hansyokus h
+                     WHERE h.hansyoku_num = (ru.ketto_info_hansyoku_nums)[1]
+                       AND h.ketto_num IS NOT NULL
+                     UNION ALL
+                     SELECT h.ketto_num, 'dam' AS parent_type
+                     FROM hansyokus h
+                     WHERE h.hansyoku_num = (ru.ketto_info_hansyoku_nums)[2]
+                       AND h.ketto_num IS NOT NULL
+                 ) parent_type ON true
+                 WHERE ru.ketto_num = ANY(%(horse_ids)s)
+                   AND parent_type.ketto_num = ANY(%(horse_ids)s)
+                 """
+        rows = conn.execute(query, {"horse_ids": node_ids}).fetchall()
+
+        links = []
+        for row in rows:
+            links.append({
+                "source": row["parent"],
+                "target": row["child"],
+                "linkType": row["parent_type"],
+            })
+
+        return links
+
+
 def fetch_horse_network(
     min_intersections: int = 2,
     min_prize: float = 0.0,

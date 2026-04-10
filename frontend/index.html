@@ -52,7 +52,19 @@
                style="display: inline; margin-left: 5px; cursor: pointer;">社区发现染色（Louvain 算法）</label>
     </div>
 
+    <div class="toggle-container" style="margin-top: 15px;">
+        <input type="checkbox" id="pedigreeToggle">
+        <label for="pedigreeToggle"
+               style="display: inline; margin-left: 5px; cursor: pointer;">显示血统关系（父子/母子）</label>
+    </div>
+
     <div id="communityLegend" class="community-legend"></div>
+
+    <div style="margin-top: 12px; padding: 8px 10px; background: rgba(255,255,255,0.5); border-radius: 6px; font-size: 11px; color: #718096;">
+        <div><span style="display:inline-block;width:16px;height:2px;background:#d0d0d0;vertical-align:middle;"></span> 宿敌（同场竞技）</div>
+        <div style="margin-top:3px;"><span style="display:inline-block;width:16px;height:2px;background:#4f46e5;vertical-align:middle;"></span> 父系血脉</div>
+        <div style="margin-top:3px;"><span style="display:inline-block;width:16px;height:2px;background:#ec4899;vertical-align:middle;"></span> 母系血脉</div>
+    </div>
 
     <div style="margin-top: 15px;">
         <label for="tooltipModeSelect" style="font-size: 13px; color: #4a5568;">Tooltip 显示方式</label>
