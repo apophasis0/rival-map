@@ -71,7 +71,8 @@ async def get_network(
     min_prize: float = Query(0.0, alias="minPrize"),
     max_rank: int = Query(18, alias="maxRank"),
     strict_mode: bool = Query(True, alias="strictMode"),
-    include_pedigree: bool = Query(False, alias="includePedigree")
+    include_sire: bool = Query(False, alias="includeSire"),
+    include_dam: bool = Query(False, alias="includeDam")
 ):
     """
     接收前端传来的参数，动态调整图谱密度和质量
@@ -79,7 +80,8 @@ async def get_network(
     min_prize: 最低奖金阈值（万円）
     max_rank: 最低名次阈值（kakutei_jyuni <= max_rank）
     strict_mode: 名次过滤模式（True=严格模式，False=宽松模式）
-    include_pedigree: 是否包含血统关系边
+    include_sire: 是否显示父系血脉边
+    include_dam: 是否显示母系血脉边
     """
     data = fetch_horse_network(
         min_intersections=min_weight,
@@ -89,9 +91,15 @@ async def get_network(
     )
 
     # 如果需要血统边，查询并添加到 links 中
-    if include_pedigree and data["nodes"]:
+    parent_types = []
+    if include_sire:
+        parent_types.append("sire")
+    if include_dam:
+        parent_types.append("dam")
+
+    if parent_types and data["nodes"]:
         node_ids = [n["id"] for n in data["nodes"]]
-        pedigree_links = fetch_pedigree_links(node_ids)
+        pedigree_links = fetch_pedigree_links(node_ids, parent_types=parent_types)
 
         # 为宿敌边添加 linkType
         for link in data["links"]:

@@ -23,12 +23,13 @@ async function fetchNetworkData(
   minPrize: number,
   maxRank: number,
   strictMode: boolean,
-  includePedigree: boolean,
+  includeSire: boolean,
+  includeDam: boolean,
 ): Promise<BackendGraphData> {
   if (import.meta.env.DEV) {
     // 开发模式：调用后端 API
     const response = await fetch(
-      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includePedigree=${includePedigree}`,
+      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`,
     );
     if (!response.ok) {
       throw new Error(`后端请求失败: ${response.status} ${response.statusText}`);
@@ -52,7 +53,8 @@ const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInpu
 const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
 const strictRankToggle = document.getElementById('strictRankToggle') as HTMLInputElement;
 const communityToggle = document.getElementById('communityToggle') as HTMLInputElement;
-const pedigreeToggle = document.getElementById('pedigreeToggle') as HTMLInputElement;
+const sireToggle = document.getElementById('sireToggle') as HTMLInputElement;
+const damToggle = document.getElementById('damToggle') as HTMLInputElement;
 const communityLegendEl = document.getElementById('communityLegend') as HTMLElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
@@ -72,10 +74,11 @@ async function renderNetwork(
   maxRank: number,
   strictMode: boolean,
   useCommunityMode: boolean,
-  usePedigreeMode: boolean,
+  includeSire: boolean,
+  includeDam: boolean,
 ): Promise<void> {
   try {
-    const data = await fetchNetworkData(minWeight, minPrize, maxRank, strictMode, usePedigreeMode);
+    const data = await fetchNetworkData(minWeight, minPrize, maxRank, strictMode, includeSire, includeDam);
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -165,9 +168,10 @@ function updateGraph(): void {
   const maxRank = parseInt(rankSlider.value, 10) || 18;
   const strictMode = strictRankToggle.checked;
   const useCommunityMode = communityToggle.checked;
-  const usePedigreeMode = pedigreeToggle.checked;
-  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, pedigreeMode=${usePedigreeMode}`);
-  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, usePedigreeMode);
+  const includeSire = sireToggle.checked;
+  const includeDam = damToggle.checked;
+  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, sireMode=${includeSire}, damMode=${includeDam}`);
+  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, includeSire, includeDam);
 }
 
 weightSlider.addEventListener('change', updateGraph);
@@ -182,7 +186,8 @@ rankSlider.addEventListener('input', (e) => {
 rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
 communityToggle.addEventListener('change', updateGraph);
-pedigreeToggle.addEventListener('change', updateGraph);
+sireToggle.addEventListener('change', updateGraph);
+damToggle.addEventListener('change', updateGraph);
 
 // Tooltip 显示模式切换
 tooltipModeSelect.addEventListener('change', () => {
