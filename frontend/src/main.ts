@@ -11,8 +11,8 @@ import { renderCommunityLegend } from './utils/communityUI';
 
 // ============ 全局常量 ============
 
-// 静态数据路径（方案 A：预计算 JSON + 纯静态前端）
-const DATA_BASE_URL = './data/network';
+// 静态数据路径（VPS 子路径部署）
+const DATA_BASE_URL = '/rival-map/data/network';
 
 // ============ DOM 元素 ============
 
