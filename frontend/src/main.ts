@@ -228,7 +228,7 @@ async function fetchPedigreeEdgesFromApi(includeSire: boolean, includeDam: boole
           ? PEDIGREE_EDGE_CONFIG.sire
           : PEDIGREE_EDGE_CONFIG.dam;
         graph.addEdge(link.source, link.target, {
-          weight: 1,
+          weight: 0,  // FA2 布局权重为 0，不影响布局
           size: cfg.size,
           color: cfg.color,
           alpha: cfg.alpha,

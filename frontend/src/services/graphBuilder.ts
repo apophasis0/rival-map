@@ -179,7 +179,7 @@ function addPedigreeEdges(graph: Graph, data: BackendGraphData): void {
     const config = PEDIGREE_EDGE_CONFIG[lt];
 
     graph.addEdge(link.source, link.target, {
-      weight: 1,
+      weight: 0,  // FA2 布局权重为 0，不影响布局
       size: config.size,
       color: config.color,
       alpha: config.alpha,
