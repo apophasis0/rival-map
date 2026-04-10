@@ -10,6 +10,11 @@ load_dotenv()
 pool: ConnectionPool | None = None
 
 
+def _configure_connection(conn: psycopg.Connection) -> None:
+    """配置连接的 row_factory"""
+    conn.row_factory = dict_row
+
+
 def init_db_pool():
     """在 FastAPI 启动时调用，初始化连接池"""
     global pool
@@ -21,7 +26,7 @@ def init_db_pool():
                  f"port={os.getenv('DB_PORT')}",
         min_size=5,
         max_size=20,
-        row_factory=dict_row,
+        configure=_configure_connection,
         open=True,  # 立即打开连接池
     )
     print(f"[DB] 连接池已初始化: min_size=5, max_size=20")
