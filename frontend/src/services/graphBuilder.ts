@@ -97,10 +97,10 @@ export function buildGraph(
     });
   }
 
-  // 添加边 — 动态过滤 + 自适应透明度/粗细
-  addEdges(graph, data, nodeCount);
+  // 1. 添加宿敌边（用于社区检测和基础布局）
+  addRivalEdges(graph, data, nodeCount);
 
-  // 社区检测（必须在边添加之后运行，因为 Louvain 依赖边的权重）
+  // 2. 社区检测（基于宿敌边，不受血统边影响）
   if (useCommunityMode) {
     const communities = detectCommunities(graph);
     communityResult = {
@@ -120,18 +120,18 @@ export function buildGraph(
     }
   }
 
+  // 3. 添加血统边（不影响社区检测）
+  addPedigreeEdges(graph, data);
+
   return { graph, communityResult };
 }
 
-/** 添加边到图中 */
-function addEdges(graph: Graph, data: BackendGraphData, nodeCount: number): void {
-  const maxWeight = Math.max(...data.links.map((l) => l.weight), 1);
-
-  // 分离宿敌边和血统边
+/** 添加宿敌边到图中 */
+function addRivalEdges(graph: Graph, data: BackendGraphData, nodeCount: number): void {
   const rivalLinks = data.links.filter(l => l.linkType === 'rival' || !l.linkType);
-  const pedigreeLinks = data.links.filter(l => l.linkType === 'sire' || l.linkType === 'dam');
+  const maxWeight = Math.max(...rivalLinks.map((l) => l.weight), 1);
 
-  // --- 宿敌边：动态过滤 + 自适应透明度/粗细 ---
+  // 计算动态过滤阈值
   const edgeBudget = Math.max(nodeCount * EDGE_FILTER_CONFIG.edgeBudgetMultiplier, EDGE_FILTER_CONFIG.edgeBudgetMin);
   let edgeVisibilityThreshold = 1;
 
@@ -162,8 +162,12 @@ function addEdges(graph: Graph, data: BackendGraphData, nodeCount: number): void
   }
 
   console.log(`[Edge] 可见宿敌边数: ${visibleEdgeCount} / ${rivalLinks.length} (阈值: ${edgeVisibilityThreshold})`);
+}
 
-  // --- 血统边：不过滤，全部显示 ---
+/** 添加血统边到图中（仅当 data 中包含时） */
+function addPedigreeEdges(graph: Graph, data: BackendGraphData): void {
+  const pedigreeLinks = data.links.filter(l => l.linkType === 'sire' || l.linkType === 'dam');
+
   let pedigreeCount = 0;
   for (const link of pedigreeLinks) {
     if (!graph.hasNode(link.source) || !graph.hasNode(link.target)) continue;
