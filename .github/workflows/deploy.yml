@@ -71,18 +71,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/rival-map
-            
+
             # 确保 .env 文件存在
             if [ ! -f .env ]; then
               echo "Error: .env file not found on server!"
               echo "Please create /opt/rival-map/.env with your database credentials"
               exit 1
             fi
-            
+
             # 构建并启动后端容器
             docker compose pull backend
             docker compose build backend
             docker compose up -d backend
-            
+
             # 显示容器状态
             docker compose ps backend
