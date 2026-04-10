@@ -16,7 +16,7 @@ import { renderCommunityLegend } from './utils/communityUI';
 // 生产模式：从 Cloudflare R2 加载静态 JSON 文件
 const API_URL = import.meta.env.DEV
   ? 'http://localhost:8000/api/network'
-  : 'https://data.apophasis.top';
+  : 'https://rival-map-data.apophasis';
 
 /** 统一的数据获取函数 */
 async function fetchNetworkData(
