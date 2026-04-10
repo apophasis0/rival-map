@@ -39,7 +39,7 @@ async function fetchNetworkData(
   } else {
     // 生产模式：从 R2 加载静态 JSON
     const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
-    const response = await fetch(`${API_URL}/${filename}`);
+    const response = await fetch(`${API_URL}/network/${filename}`);
     if (!response.ok) {
       throw new Error(`未找到数据文件: ${filename} (${response.status})`);
     }
