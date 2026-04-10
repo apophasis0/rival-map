@@ -10,3 +10,6 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "uvicorn>=0.44.0",
 ]
+
+[project.optional-dependencies]
+r2 = ["boto3>=1.36.0"]

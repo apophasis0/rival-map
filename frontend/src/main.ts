@@ -13,10 +13,10 @@ import { renderCommunityLegend } from './utils/communityUI';
 // ============ 全局常量 ============
 
 // 开发模式：连接后端 API（需要启动 FastAPI）
-// 生产模式：加载静态 JSON 文件（无需后端）
+// 生产模式：从 Cloudflare R2 加载静态 JSON 文件
 const API_URL = import.meta.env.DEV
   ? 'http://localhost:8000/api/network'
-  : '/rival-map/data/network';
+  : 'https://data.apophasis.top';
 
 /** 统一的数据获取函数 */
 async function fetchNetworkData(
@@ -37,13 +37,29 @@ async function fetchNetworkData(
     }
     return response.json();
   } else {
-    // 生产模式：加载静态 JSON（暂不支持血统数据）
+    // 生产模式：从 R2 加载静态 JSON
     const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
     const response = await fetch(`${API_URL}/${filename}`);
     if (!response.ok) {
       throw new Error(`未找到数据文件: ${filename} (${response.status})`);
     }
-    return response.json();
+    const data: BackendGraphData = await response.json();
+
+    // 血统边：从 R2 获取（如果开启）
+    if ((includeSire || includeDam) && data.nodes.length > 0) {
+      const pedigreeUrl = `${API_URL}/pedigree.json?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
+      try {
+        const pedResp = await fetch(pedigreeUrl);
+        if (pedResp.ok) {
+          const pedData = await pedResp.json();
+          data.links.push(...pedData.links);
+        }
+      } catch (e) {
+        console.warn('获取血统边失败:', e);
+      }
+    }
+
+    return data;
   }
 }
 
