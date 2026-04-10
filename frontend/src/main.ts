@@ -11,8 +11,38 @@ import { renderCommunityLegend } from './utils/communityUI';
 
 // ============ 全局常量 ============
 
-// 静态数据路径（VPS 子路径部署）
-const DATA_BASE_URL = '/rival-map/data/network';
+// 开发模式：连接后端 API（需要启动 FastAPI）
+// 生产模式：加载静态 JSON 文件（无需后端）
+const API_URL = import.meta.env.DEV
+  ? 'http://localhost:8000/api/network'
+  : '/rival-map/data/network';
+
+/** 统一的数据获取函数 */
+async function fetchNetworkData(
+  minWeight: number,
+  minPrize: number,
+  maxRank: number,
+  strictMode: boolean,
+): Promise<BackendGraphData> {
+  if (import.meta.env.DEV) {
+    // 开发模式：调用后端 API
+    const response = await fetch(
+      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}`,
+    );
+    if (!response.ok) {
+      throw new Error(`后端请求失败: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  } else {
+    // 生产模式：加载静态 JSON
+    const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
+    const response = await fetch(`${API_URL}/${filename}`);
+    if (!response.ok) {
+      throw new Error(`未找到数据文件: ${filename} (${response.status})`);
+    }
+    return response.json();
+  }
+}
 
 // ============ DOM 元素 ============
 
@@ -41,14 +71,7 @@ async function renderNetwork(
   useCommunityMode: boolean,
 ): Promise<void> {
   try {
-    // 从静态 JSON 加载（无需后端）
-    const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
-    const response = await fetch(`${DATA_BASE_URL}/${filename}`);
-    if (!response.ok) {
-      console.warn(`未找到数据文件: ${filename} (${response.status})`);
-      return;
-    }
-    const data: BackendGraphData = await response.json();
+    const data = await fetchNetworkData(minWeight, minPrize, maxRank, strictMode);
 
     const width = window.innerWidth;
     const height = window.innerHeight;
