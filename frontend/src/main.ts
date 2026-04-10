@@ -3,6 +3,7 @@ import Graph from 'graphology';
 import { appState } from './state/appState';
 import { panelService } from './services/panelService';
 import { buildGraph } from './services/graphBuilder';
+import { PEDIGREE_EDGE_CONFIG } from './config/sigmaConfig';
 import { initSigma, startLayout } from './services/rendererService';
 import { setHighlight, showTooltip, showEdgeTooltip, hideEdgeTooltip, setTooltipMode } from './services/interactionService';
 import type { BackendGraphData } from './types';
@@ -161,7 +162,7 @@ prizeSlider.addEventListener('input', (e) => {
   prizeValueDisplay.innerText = (e.target as HTMLInputElement).value;
 });
 
-// 更新图谱
+// 更新图谱（仅重新请求 API 数据，不涉及血统边切换）
 function updateGraph(): void {
   const minWeight = parseInt(weightSlider.value, 10);
   const minPrize = parseInt(prizeSlider.value, 10);
@@ -172,6 +173,76 @@ function updateGraph(): void {
   const includeDam = damToggle.checked;
   console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, sireMode=${includeSire}, damMode=${includeDam}`);
   renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, includeSire, includeDam);
+}
+
+// 切换血统边的显隐（不重绘，仅在已有图上操作）
+function togglePedigreeEdges(): void {
+  const includeSire = sireToggle.checked;
+  const includeDam = damToggle.checked;
+  const graph = appState.graph;
+  if (!graph) return;
+
+  // 1. 先删除图上已有的血统边
+  const edgesToRemove: string[] = [];
+  graph.forEachEdge((edgeId, attrs) => {
+    const lt = attrs.linkType;
+    if (lt === 'sire' || lt === 'dam') edgesToRemove.push(edgeId);
+  });
+  for (const edgeId of edgesToRemove) {
+    graph.dropEdge(edgeId);
+  }
+
+  // 2. 如果需要添加血统边，从专用端点获取
+  if (includeSire || includeDam) {
+    fetchPedigreeEdgesFromApi(includeSire, includeDam);
+  } else {
+    // 仅刷新渲染（不请求 API）
+    appState.renderer?.refresh();
+  }
+}
+
+// 从 API 获取血统边并添加到现有图上
+async function fetchPedigreeEdgesFromApi(includeSire: boolean, includeDam: boolean): Promise<void> {
+  if (!import.meta.env.DEV) return; // 生产模式暂不支持
+
+  const minWeight = parseInt(weightSlider.value, 10);
+  const minPrize = parseInt(prizeSlider.value, 10);
+  const maxRank = parseInt(rankSlider.value, 10) || 18;
+  const strictMode = strictRankToggle.checked;
+
+  try {
+    const url = `http://localhost:8000/api/pedigree?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.warn(`获取血统边失败: ${resp.status}`);
+      return;
+    }
+    const data = await resp.json();
+    const graph = appState.graph;
+    if (!graph) return;
+
+    let addedCount = 0;
+    for (const link of data.links) {
+      if (graph.hasNode(link.source) && graph.hasNode(link.target) && !graph.hasEdge(link.source, link.target)) {
+        const cfg = link.linkType === 'sire'
+          ? PEDIGREE_EDGE_CONFIG.sire
+          : PEDIGREE_EDGE_CONFIG.dam;
+        graph.addEdge(link.source, link.target, {
+          weight: 1,
+          size: cfg.size,
+          color: cfg.color,
+          alpha: cfg.alpha,
+          linkType: link.linkType,
+        });
+        addedCount++;
+      }
+    }
+
+    console.log(`[Pedigree] 添加了 ${addedCount} 条血统边`);
+    appState.renderer?.refresh();
+  } catch (e) {
+    console.error('获取血统边失败:', e);
+  }
 }
 
 weightSlider.addEventListener('change', updateGraph);
@@ -186,8 +257,8 @@ rankSlider.addEventListener('input', (e) => {
 rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
 communityToggle.addEventListener('change', updateGraph);
-sireToggle.addEventListener('change', updateGraph);
-damToggle.addEventListener('change', updateGraph);
+sireToggle.addEventListener('change', togglePedigreeEdges);
+damToggle.addEventListener('change', togglePedigreeEdges);
 
 // Tooltip 显示模式切换
 tooltipModeSelect.addEventListener('change', () => {

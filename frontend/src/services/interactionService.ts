@@ -79,23 +79,32 @@ function buildHighlightContext(graph: Graph, centerNodeId: string): HighlightCon
   const oneHopEdges = new Set<string>();
   const twoHopEdges = new Set<string>();
 
-  // 收集 1-hop 节点
-  graph.forEachNeighbor(centerNodeId, (neighbor) => {
-    if (twoHop.has(neighbor)) {
+  // 收集 1-hop 节点（跳过血统边）
+  graph.forEachNeighbor(centerNodeId, (neighbor, edge) => {
+    const edgeAttrs = graph.getEdgeAttributes(edge);
+    const linkType = edgeAttrs.linkType as string | undefined;
+    // 只统计宿敌边
+    if (linkType !== 'sire' && linkType !== 'dam' && twoHop.has(neighbor)) {
       oneHopNodes.add(neighbor);
     }
   });
 
-  // 预计算最大边权重
+  // 预计算最大边权重（仅统计宿敌边）
   let maxEdgeWeight = 1;
   graph.forEachEdge((edge) => {
-    const weight = graph.getEdgeAttributes(edge).weight ?? 1;
+    const attrs = graph.getEdgeAttributes(edge);
+    const linkType = attrs.linkType as string | undefined;
+    if (linkType === 'sire' || linkType === 'dam') return;
+    const weight = attrs.weight ?? 1;
     if (weight > maxEdgeWeight) maxEdgeWeight = weight;
   });
 
-  // 分类边
-  graph.forEachEdge((edge, _attrs, source, target) => {
+  // 分类边（跳过血统边）
+  graph.forEachEdge((edge, attrs, source, target) => {
     if (!twoHop.has(source) || !twoHop.has(target)) return;
+    const linkType = attrs.linkType as string | undefined;
+    // 血统边不参与高亮
+    if (linkType === 'sire' || linkType === 'dam') return;
     if (source === centerNodeId || target === centerNodeId) {
       oneHopEdges.add(edge);
     } else {
