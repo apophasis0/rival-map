@@ -14,7 +14,7 @@
 - **Hover 高亮**：鼠标悬停时高亮 1-hop/2-hop 邻居节点和边
 - **毛玻璃控制面板**：可折叠的控制面板，支持状态持久化
 - **高性能查询**：使用物化视图和复合索引优化数据库查询
-- **零后端部署**：预计算静态 JSON，VPS 只需 nginx 即可运行
+- **容器化部署**：后端 Docker 容器化，前端 GitHub Actions 自动部署
 
 ## 🖥️ 技术栈
 
@@ -24,7 +24,7 @@
 | 前端 | TypeScript, Vite, Sigma.js v3, graphology |
 | 数据库 | PostgreSQL（物化视图 + 复合索引优化） |
 | 社区发现 | `graphology-communities-louvain`（Louvain 算法） |
-| 部署 | GitHub Actions + nginx（纯静态，零运行时依赖） |
+| 部署 | GitHub Actions（前端）+ Docker Compose（后端） |
 | 依赖管理 | `uv`（后端）, `npm`（前端） |
 
 ## 🚀 快速开始（本地开发）
@@ -151,10 +151,8 @@ rival-map/
 │   │   ├── main.py                 # FastAPI 应用，连接池 + lifespan 事件
 │   │   ├── graph_service.py        # 核心查询逻辑（CTE / 物化视图自适应）
 │   │   └── database.py             # PostgreSQL 连接池（psycopg_pool）
-│   ├── scripts/
-│   │   └── generate_static_data.py # 预计算静态 JSON 数据（VPS 部署用）
-│   ├── static_data/
-│   │   └── network/                # 生成的静态 JSON 数据（不纳入版本控制）
+│   ├── Dockerfile                  # Docker 容器构建配置
+│   ├── .dockerignore               # Docker 构建排除文件
 │   ├── create_indexes.sql          # 创建复合索引脚本
 │   ├── create_materialized_views.sql  # 创建物化视图脚本
 │   └── refresh_materialized_views.sql # 手动刷新物化视图脚本
@@ -179,6 +177,8 @@ rival-map/
 │   │   └── algorithms/
 │   │       └── graph.ts            # 图算法（两跳邻居等）
 │   └── style.css                   # 样式（毛玻璃面板、图例、FAB 按钮）
+├── docker-compose.yml              # Docker Compose 配置（后端服务）
+├── .env.example                    # 环境变量模板
 └── README.md
 ```
 
@@ -250,110 +250,122 @@ npm run preview    # 预览生产构建
 2. **CORS 配置**：后端默认允许 `localhost:5173` 和 `127.0.0.1:5173`，如需修改请编辑 `backend/app/main.py`
 3. **首次启动慢**：首次创建物化视图可能需要 30-60 秒，之后刷新只需几秒
 
-## 🌐 部署到 VPS
+## 🌐 部署
 
-> VPS 上**不需要** Python、数据库或 Node.js，只需 nginx 即可。
-> 项目以子路径方式部署在 `apophasis.top/rival-map/`，与 Astro 博客共存。
+项目采用**前后端分离部署**策略：
+- **前端**：纯静态文件，通过 GitHub Actions 自动部署到 VPS
+- **后端**：FastAPI 容器化部署，连接服务器上的 PostgreSQL 数据库
 
 ### 架构概览
 
 ```
-apophasis.top/          → Astro 博客（/var/www/astro-blog/）
-apophasis.top/rival-map → 赛马图谱（/var/www/rival-map/）
+用户
+  ↓
+Nginx（已有）
+  ├── /rival-map/     → 前端静态文件（/var/www/rival-map/）
+  └── /api/           → 反向代理 → Docker 容器（localhost:8000）
 ```
 
-### 步骤 1：生成静态数据
+### 前置条件
 
-在**有数据库的本地机器**上运行：
+#### 数据库准备
+
+确保服务器上 PostgreSQL 已有：
+1. **数据库和用户**
+2. **数据表**：`race_umas` 和 `race_details`
+3. **索引和物化视图**：
+   ```bash
+   psql -U <user> -d <database> -f backend/create_indexes.sql
+   psql -U <user> -d <database> -f backend/create_materialized_views.sql
+   ```
+
+#### Docker 权限
+
+部署用户需要有 Docker 访问权限：
+```bash
+sudo usermod -aG docker deploy
+```
+执行后需要**重新登录** deploy 用户使权限生效。
+
+### 部署步骤
+
+#### 1. 在服务器上创建环境变量文件
 
 ```bash
-cd backend
-uv run python scripts/generate_static_data.py
+mkdir -p /opt/rival-map
+nano /opt/rival-map/.env
 ```
 
-这会根据参数组合生成约 180 个 JSON 文件，存放在 `backend/static_data/network/` 目录下。
-
-### 步骤 2：构建前端
-
-```bash
-cd frontend
-npm run build
+`.env` 内容：
+```env
+DB_NAME=your_database_name
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+DB_HOST=localhost
+DB_PORT=5432
 ```
 
-### 步骤 3：自动部署前端（GitHub Actions）
+#### 2. 配置 Nginx 反向代理
 
-推送到 `master` 分支后，GitHub Actions 会自动：
-1. 构建前端
-2. 通过 rsync 部署到 `/var/www/rival-map/`
-
-### 步骤 4：手动同步 JSON 数据
-
-JSON 数据文件无法在 CI 中生成（需要访问 PostgreSQL），需要手动上传：
-
-```bash
-# 首次部署
-rsync -rlvz --delete backend/static_data/network/ \
-  $SERVER_USER@$SERVER_IP:/var/www/rival-map/data/network/
-
-# 数据更新时
-rsync -rlvz --delete backend/static_data/network/ \
-  $SERVER_USER@$SERVER_IP:/var/www/rival-map/data/network/
-```
-
-> 建议在 `~/.ssh/config` 中配置 VPS 别名，或使用 SSH agent 转发简化操作。
-
-### 步骤 5：nginx 配置
-
-在现有博客的 nginx `server` 块中追加一个 location：
+在你已有的 Nginx 配置中添加：
 
 ```nginx
 server {
-    server_name apophasis.top www.apophasis.top;
+    # ... 现有配置不变 ...
 
-    # 博客（根路径，不变）
-    root /var/www/astro-blog;
-    index index.html;
-
-    # ... 博客的现有配置不变 ...
-
-    # rival-map 子路径
+    # 前端静态文件
     location /rival-map/ {
         alias /var/www/rival-map/;
         index index.html;
         try_files $uri $uri/ /rival-map/index.html;
+    }
 
-        # JSON 文件缓存 1 天
-        location ~* \.json$ {
-            expires 1d;
-            add_header Cache-Control "public, max-age=86400";
-        }
+    # 后端 API 反向代理
+    location /api/ {
+        proxy_pass http://localhost:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
 
-重载 nginx：
-
+重载 Nginx：
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### VPS 目录结构
+#### 3. 首次手动部署后端
 
+```bash
+cd /opt/rival-map
+
+# 确保 docker-compose.yml 已存在（从项目根目录复制）
+
+# 构建并启动
+docker compose build backend
+docker compose up -d backend
+
+# 查看状态
+docker compose ps backend
 ```
-/var/www/
-├── astro-blog/          ← Astro 博客（不变）
-│   └── ...
-└── rival-map/           ← 赛马图谱
-    ├── index.html
-    ├── assets/
-    │   ├── index-xxx.css
-    │   └── index-xxx.js
-    └── data/
-        └── network/
-            ├── 1_0_18_true.json
-            ├── 1_0_18_false.json
-            └── ...
-```
+
+#### 4. 自动部署（GitHub Actions）
+
+推送到 `master` 分支后，GitHub Actions 会自动：
+1. 构建前端并部署到 `/var/www/rival-map/`
+2. 同步后端代码到 `/opt/rival-map/backend/`
+3. 重新构建并启动后端容器
+
+### 项目文件说明
+
+| 文件 | 说明 |
+|------|------|
+| `docker-compose.yml` | Docker Compose 配置（仅后端服务） |
+| `backend/Dockerfile` | 后端容器构建配置 |
+| `backend/.dockerignore` | Docker 构建排除文件 |
+| `.env.example` | 环境变量模板 |
+| `.github/workflows/deploy.yml` | 自动部署工作流 |
 
 ## 📄 许可证
 
