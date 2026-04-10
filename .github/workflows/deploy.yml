@@ -6,7 +6,8 @@ on:
       - master
 
 jobs:
-  build-and-deploy:
+  # 前端构建和部署
+  deploy-frontend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -25,7 +26,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Deploy to VPS via Rsync
+      - name: Deploy Frontend to VPS
         uses: easingthemes/ssh-deploy@v5.0.3
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -33,4 +34,55 @@ jobs:
           REMOTE_USER: ${{ secrets.SERVER_USER }}
           ARGS: "-rlvz --delete --exclude 'data/'"
           SOURCE: "frontend/dist/"
-          TARGET: "/var/www/rival-map/"
+          TARGET: "/var/www/rival-map/frontend/"
+
+  # 后端 Docker 部署
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Backend via SSH
+        uses: easingthemes/ssh-deploy@v5.0.3
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.SERVER_IP }}
+          REMOTE_USER: ${{ secrets.SERVER_USER }}
+          ARGS: "-rlvz --delete"
+          SOURCE: "backend/"
+          TARGET: "/opt/rival-map/backend/"
+
+      - name: Deploy Docker Compose
+        uses: easingthemes/ssh-deploy@v5.0.3
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.SERVER_IP }}
+          REMOTE_USER: ${{ secrets.SERVER_USER }}
+          ARGS: "-rlvz"
+          SOURCE: "docker-compose.yml"
+          TARGET: "/opt/rival-map/"
+
+      - name: Rebuild and Restart Backend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/rival-map
+            
+            # 确保 .env 文件存在
+            if [ ! -f .env ]; then
+              echo "Error: .env file not found on server!"
+              echo "Please create /opt/rival-map/.env with your database credentials"
+              exit 1
+            fi
+            
+            # 构建并启动后端容器
+            docker compose pull backend
+            docker compose build backend
+            docker compose up -d backend
+            
+            # 显示容器状态
+            docker compose ps backend
