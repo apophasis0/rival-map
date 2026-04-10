@@ -219,12 +219,26 @@ export function showTooltip(nodeId: string, event: MouseEvent): void {
     communityHtml = `<br><span style="color: #cbd5e1;">派系:</span> <span style="color: ${attrs.color}; font-weight: 600;">${communityLabel}</span>`;
   }
 
+  // 父母信息（仅在血统边开启时显示）
+  let parentHtml = '';
+  const parts: string[] = [];
+  if (attrs.sire_name) {
+    parts.push(`<span style="color: #4f46e5;">父:</span> ${attrs.sire_name}`);
+  }
+  if (attrs.dam_name) {
+    parts.push(`<span style="color: #ec4899;">母:</span> ${attrs.dam_name}`);
+  }
+  if (parts.length > 0) {
+    parentHtml = `<br><span style="color: #cbd5e1;">${parts.join(' / ')}</span>`;
+  }
+
   tooltipEl.innerHTML = `
     <strong>${attrs.name}</strong>
     <span style="font-size: 12px; color: #a0aec0; font-weight: normal;">(ID: ${nodeId})</span><br>
     <span style="color: #cbd5e1;">性别:</span> ${sexText}<br>
     <span style="color: #cbd5e1;">总奖金:</span> <span style="color: #ffd700;">${prizeText}</span>
     ${communityHtml}
+    ${parentHtml}
   `;
   tooltipEl.style.opacity = '1';
 

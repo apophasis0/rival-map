@@ -227,6 +227,16 @@ async function fetchPedigreeEdgesFromApi(includeSire: boolean, includeDam: boole
         const cfg = link.linkType === 'sire'
           ? PEDIGREE_EDGE_CONFIG.sire
           : PEDIGREE_EDGE_CONFIG.dam;
+
+        // 在子节点上记录父/母名字
+        const parentAttrs = graph.getNodeAttributes(link.source);
+        const parentName = parentAttrs.name ?? '';
+        if (link.linkType === 'sire') {
+          graph.setNodeAttribute(link.target, 'sire_name', parentName);
+        } else {
+          graph.setNodeAttribute(link.target, 'dam_name', parentName);
+        }
+
         graph.addEdge(link.source, link.target, {
           weight: 0,  // FA2 布局权重为 0，不影响布局
           size: cfg.size,

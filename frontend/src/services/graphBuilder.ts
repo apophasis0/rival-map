@@ -94,6 +94,8 @@ export function buildGraph(
       prize_score: node.prize_score,
       active_year: node.active_year,
       community: null as number | null,
+      sire_name: null as string | null,
+      dam_name: null as string | null,
     });
   }
 
@@ -168,6 +170,12 @@ function addRivalEdges(graph: Graph, data: BackendGraphData, nodeCount: number):
 function addPedigreeEdges(graph: Graph, data: BackendGraphData): void {
   const pedigreeLinks = data.links.filter(l => l.linkType === 'sire' || l.linkType === 'dam');
 
+  // 先建立 nodeId -> name 映射
+  const nameMap = new Map<string, string>();
+  for (const node of data.nodes) {
+    nameMap.set(node.id, node.name);
+  }
+
   let pedigreeCount = 0;
   for (const link of pedigreeLinks) {
     if (!graph.hasNode(link.source) || !graph.hasNode(link.target)) continue;
@@ -177,6 +185,14 @@ function addPedigreeEdges(graph: Graph, data: BackendGraphData): void {
     pedigreeCount++;
     const lt = link.linkType as 'sire' | 'dam';
     const config = PEDIGREE_EDGE_CONFIG[lt];
+
+    // 在子节点上记录父/母名字
+    const parentName = nameMap.get(link.source) ?? '';
+    if (lt === 'sire') {
+      graph.setNodeAttribute(link.target, 'sire_name', parentName);
+    } else {
+      graph.setNodeAttribute(link.target, 'dam_name', parentName);
+    }
 
     graph.addEdge(link.source, link.target, {
       weight: 0,  // FA2 布局权重为 0，不影响布局
