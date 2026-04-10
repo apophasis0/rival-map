@@ -11,7 +11,8 @@ import { renderCommunityLegend } from './utils/communityUI';
 
 // ============ 全局常量 ============
 
-const API_BASE_URL = 'http://localhost:8000/api/network';
+// 静态数据路径（方案 A：预计算 JSON + 纯静态前端）
+const DATA_BASE_URL = './data/network';
 
 // ============ DOM 元素 ============
 
@@ -40,7 +41,13 @@ async function renderNetwork(
   useCommunityMode: boolean,
 ): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}`);
+    // 从静态 JSON 加载（无需后端）
+    const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
+    const response = await fetch(`${DATA_BASE_URL}/${filename}`);
+    if (!response.ok) {
+      console.warn(`未找到数据文件: ${filename} (${response.status})`);
+      return;
+    }
     const data: BackendGraphData = await response.json();
 
     const width = window.innerWidth;

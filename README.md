@@ -169,7 +169,11 @@ rival-map/
 │   ├── app/
 │   │   ├── main.py               # FastAPI 应用，lifespan 事件自动刷新物化视图
 │   │   ├── graph_service.py      # 核心查询逻辑（CTE / 物化视图自适应）
-│   │   └── database.py           # PostgreSQL 连接（psycopg3, dict_row）
+│   │   └── database.py           # PostgreSQL 连接（psycopg3, dict_row, 连接池）
+│   ├── scripts/
+│   │   └── generate_static_data.py  # 预计算静态 JSON 数据（VPS 部署用）
+│   ├── static_data/
+│   │   └── network/              # 生成的静态 JSON 数据（不纳入版本控制）
 │   ├── create_indexes.sql        # 创建复合索引脚本
 │   ├── create_materialized_views.sql  # 创建物化视图脚本
 │   └── refresh_materialized_views.sql # 手动刷新物化视图脚本
@@ -188,7 +192,9 @@ rival-map/
 │   │   │   └── appState.ts       # 全局状态管理
 │   │   ├── utils/
 │   │   │   ├── color.ts          # 颜色计算工具
-│   │   │   └── formatters.ts     # 文本格式化
+│   │   │   ├── formatters.ts     # 文本格式化
+│   │   │   ├── community.ts      # Louvain 社区发现
+│   │   │   └── communityUI.ts    # 社区图例渲染
 │   │   └── algorithms/
 │   │       └── graph.ts          # 图算法（两跳邻居等）
 │   └── style.css                 # 样式（毛玻璃面板、FAB 按钮）
@@ -262,3 +268,88 @@ npm run preview    # 预览生产构建
 ## 📄 许可证
 
 [MIT License](LICENSE)
+
+## 🌐 部署到 VPS（纯静态模式）
+
+> VPS 上**不需要** Python、数据库或 Node.js，只需 nginx 即可。
+
+### 步骤 1：在本地生成静态数据
+
+在**有数据库的本地机器**上运行：
+
+```bash
+cd backend
+uv run python scripts/generate_static_data.py
+```
+
+这会根据参数组合生成约 180 个 JSON 文件，存放在 `backend/static_data/network/` 目录下。
+
+### 步骤 2：构建前端
+
+```bash
+cd frontend
+npm run build
+```
+
+构建产物在 `frontend/dist/`。
+
+### 步骤 3：部署到 VPS
+
+将以下两个目录上传到 VPS：
+
+```
+frontend/dist/               → 前端页面
+backend/static_data/network/ → 预计算 JSON 数据
+```
+
+建议统一放在一个目录下，例如 VPS 上的 `/var/www/rival-map/`：
+
+```
+/var/www/rival-map/
+├── index.html
+├── assets/
+│   ├── index-xxx.css
+│   └── index-xxx.js
+└── data/
+    └── network/
+        ├── 1_0_18_true.json
+        ├── 1_0_18_false.json
+        └── ...
+```
+
+> ⚠️ 注意：需要将 `backend/static_data/network/` 放到 `frontend/dist/data/network/`，
+> 因为前端 fetch 的路径是相对路径 `./data/network/`。
+
+### 步骤 4：配置 nginx
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    root /var/www/rival-map;
+    index index.html;
+
+    # 启用 gzip 压缩（JSON 文件压缩率很高）
+    gzip on;
+    gzip_types application/json text/css application/javascript;
+
+    # SPA 回退
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+### 步骤 5：数据更新
+
+当 JRA 数据有更新时：
+
+1. 更新本地 PostgreSQL 数据
+2. 重新运行 `generate_static_data.py`
+3. 重新构建前端（如需要）
+4. 将 `data/network/` 目录 rsync 到 VPS
+
+```bash
+rsync -avz backend/static_data/network/ vps:/var/www/rival-map/data/network/
+```

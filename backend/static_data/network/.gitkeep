@@ -1,0 +1,3 @@
+# 此目录存放预计算的静态 JSON 数据文件
+# 运行 scripts/generate_static_data.py 后生成
+*
