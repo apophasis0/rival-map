@@ -39,8 +39,8 @@ export const NODE_SIZE_MULTIPLIERS = {
 
 /** 边粗细配置 */
 export const EDGE_SIZE_CONFIG = {
-  oneHopEdge: { base: 6.0, scale: 10.0 },  // 范围 6.0 ~ 16.0
-  twoHopEdge: { base: 0.4, scale: 0.2 },   // 范围 0.4 ~ 0.6
+  oneHopEdge: { base: 3.0, scale: 25.0 },  // 范围 3.0 ~ 28.0（加大对比度）
+  twoHopEdge: { base: 0.5, scale: 0.3 },   // 范围 0.5 ~ 0.8
 } as const;
 
 /** 默认边配置 */
