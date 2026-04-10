@@ -2,26 +2,32 @@
 
 > 一个交互式力导向图可视化工具，展示日本中央竞马会（JRA）赛马之间的竞争关系。
 
+**在线访问**：[apophasis.top/rival-map](https://apophasis.top/rival-map/)
+
 ## ✨ 功能亮点
 
 - **交互式图谱**：节点 = 赛马，边 = 共同参加 G1/JG1 比赛
 - **多维过滤**：按共同参赛次数、奖金、名次阈值筛选
+- **社区发现**：基于 Louvain 算法自动识别关系最紧密的马匹"派系"
 - **严格/宽松模式**：灵活控制连线的名次判定逻辑
 - **时间轴布局**：可选按年份从左到右排列赛马
 - **Hover 高亮**：鼠标悬停时高亮 1-hop/2-hop 邻居节点和边
 - **毛玻璃控制面板**：可折叠的控制面板，支持状态持久化
 - **高性能查询**：使用物化视图和复合索引优化数据库查询
+- **零后端部署**：预计算静态 JSON，VPS 只需 nginx 即可运行
 
 ## 🖥️ 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Python 3.14+, FastAPI, psycopg3, uvicorn |
+| 后端（本地开发） | Python 3.14+, FastAPI, psycopg3 (连接池), uvicorn |
 | 前端 | TypeScript, Vite, Sigma.js v3, graphology |
 | 数据库 | PostgreSQL（物化视图 + 复合索引优化） |
+| 社区发现 | `graphology-communities-louvain`（Louvain 算法） |
+| 部署 | GitHub Actions + nginx（纯静态，零运行时依赖） |
 | 依赖管理 | `uv`（后端）, `npm`（前端） |
 
-## 🚀 快速开始
+## 🚀 快速开始（本地开发）
 
 ### 环境要求
 
@@ -45,10 +51,9 @@ cd rival-map
 
 ```bash
 cd backend
-cp .env.example .env  # 如果没有 .env.example，手动创建
 ```
 
-编辑 `.env` 填入数据库连接信息：
+创建 `.env` 文件：
 
 ```env
 DB_NAME=your_database
@@ -79,6 +84,8 @@ uv run uvicorn app.main:app --reload
 
 后端将在 `http://localhost:8000` 启动，并**自动刷新物化视图**。
 
+> 后端使用 `psycopg_pool.ConnectionPool`（min=5, max=20），在 FastAPI lifespan 中初始化。
+
 #### 5. 启动前端
 
 ```bash
@@ -101,6 +108,15 @@ npm run dev
 | 严格模式 | 开/关 | 开 | 名次判定逻辑（见下方说明） |
 | 按年份布局 | 开/关 | 关 | 开启后赛马按年份从左到右排列 |
 | 始终显示所有马名 | 开/关 | 开 | 关闭后只在 hover 时显示马名 |
+| **社区发现染色** | 开/关 | 关 | 使用 Louvain 算法按关系紧密程度为派系着色 |
+
+### 社区发现（Louvain 算法）
+
+勾选 **"社区发现染色（Louvain 算法）"** 后，系统会：
+1. 对当前图谱运行 Louvain 社区发现算法
+2. 自动识别关系最紧密的"派系"（如 98 黄金世代、周日宁静系子嗣群）
+3. 为不同派系分配不同颜色（20 色调色板）
+4. 在控制面板底部显示图例，标注各派系名称、马匹数量和占比
 
 ### 严格模式 vs 宽松模式
 
@@ -123,81 +139,46 @@ npm run dev
 - 严格模式：weight = 1
 - 宽松模式：weight = 3
 
-## 📡 API 文档
-
-### `GET /api/network`
-
-获取赛马网络图谱数据。
-
-#### 请求参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `minWeight` | int | 2 | 最小共同参赛次数 |
-| `minPrize` | float | 0.0 | 最低奖金（万日元） |
-| `maxRank` | int | 18 | 最低名次阈值（`kakutei_jyuni <= maxRank`） |
-| `strictMode` | bool | true | 是否启用严格名次模式 |
-
-#### 响应格式
-
-```json
-{
-  "nodes": [
-    {
-      "id": "2023100001",
-      "name": "キタサンブラック",
-      "sex": "male",
-      "prize_score": 18750.0,
-      "active_year": 2016
-    }
-  ],
-  "links": [
-    {
-      "source": "2023100001",
-      "target": "2023100002",
-      "weight": 3
-    }
-  ]
-}
-```
-
 ## 📁 项目结构
 
 ```
 rival-map/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml              # GitHub Actions 自动部署到 VPS
 ├── backend/
 │   ├── app/
-│   │   ├── main.py               # FastAPI 应用，lifespan 事件自动刷新物化视图
-│   │   ├── graph_service.py      # 核心查询逻辑（CTE / 物化视图自适应）
-│   │   └── database.py           # PostgreSQL 连接（psycopg3, dict_row, 连接池）
+│   │   ├── main.py                 # FastAPI 应用，连接池 + lifespan 事件
+│   │   ├── graph_service.py        # 核心查询逻辑（CTE / 物化视图自适应）
+│   │   └── database.py             # PostgreSQL 连接池（psycopg_pool）
 │   ├── scripts/
-│   │   └── generate_static_data.py  # 预计算静态 JSON 数据（VPS 部署用）
+│   │   └── generate_static_data.py # 预计算静态 JSON 数据（VPS 部署用）
 │   ├── static_data/
-│   │   └── network/              # 生成的静态 JSON 数据（不纳入版本控制）
-│   ├── create_indexes.sql        # 创建复合索引脚本
+│   │   └── network/                # 生成的静态 JSON 数据（不纳入版本控制）
+│   ├── create_indexes.sql          # 创建复合索引脚本
 │   ├── create_materialized_views.sql  # 创建物化视图脚本
 │   └── refresh_materialized_views.sql # 手动刷新物化视图脚本
 ├── frontend/
 │   ├── src/
-│   │   ├── main.ts               # 入口文件（事件绑定、渲染流程）
-│   │   ├── types.ts              # TypeScript 类型定义
+│   │   ├── main.ts                 # 入口文件（事件绑定、渲染流程）
+│   │   ├── types.ts                # TypeScript 类型定义
 │   │   ├── config/
-│   │   │   └── sigmaConfig.ts    # Sigma.js 配置常量
+│   │   │   └── sigmaConfig.ts      # Sigma.js 配置常量
 │   │   ├── services/
-│   │   │   ├── graphBuilder.ts       # 图数据构建
-│   │   │   ├── rendererService.ts    # Sigma 渲染器管理
+│   │   │   ├── graphBuilder.ts     # 图数据构建（支持社区模式）
+│   │   │   ├── rendererService.ts  # Sigma 渲染器管理
 │   │   │   ├── interactionService.ts # Hover 高亮/Tooltip
-│   │   │   └── panelService.ts       # 控制面板状态
+│   │   │   └── panelService.ts     # 控制面板状态
 │   │   ├── state/
-│   │   │   └── appState.ts       # 全局状态管理
+│   │   │   └── appState.ts         # 全局状态管理
 │   │   ├── utils/
-│   │   │   ├── color.ts          # 颜色计算工具
-│   │   │   ├── formatters.ts     # 文本格式化
-│   │   │   ├── community.ts      # Louvain 社区发现
-│   │   │   └── communityUI.ts    # 社区图例渲染
+│   │   │   ├── color.ts            # 颜色计算工具（奖金映射）
+│   │   │   ├── formatters.ts       # 文本格式化
+│   │   │   ├── community.ts        # Louvain 社区发现 + 调色板
+│   │   │   └── communityUI.ts      # 社区图例渲染
 │   │   └── algorithms/
-│   │       └── graph.ts          # 图算法（两跳邻居等）
-│   └── style.css                 # 样式（毛玻璃面板、FAB 按钮）
+│   │       └── graph.ts            # 图算法（两跳邻居等）
+│   └── style.css                   # 样式（毛玻璃面板、图例、FAB 按钮）
 └── README.md
 ```
 
@@ -224,6 +205,10 @@ rival-map/
 |------|-----------|-----------|
 | 严格模式 | 0.3s | 0.2-0.3s |
 | 宽松模式 | 8-26s | **0.1-0.5s** |
+
+### 连接池
+
+后端使用 `psycopg_pool.ConnectionPool`（min_size=5, max_size=20），在 FastAPI 启动时初始化，关闭时清理。相比每次请求创建新连接，高并发下显著降低延迟和数据库压力。
 
 ### 物化视图刷新
 
@@ -256,7 +241,7 @@ npm run preview    # 预览生产构建
 
 ### 代码规范
 
-- **后端**：使用 `psycopg3` 的 `dict_row` 返回字典格式结果；不使用连接池，每次请求创建新连接
+- **后端**：使用 `psycopg3` 的 `dict_row` 返回字典格式结果；使用 `psycopg_pool.ConnectionPool` 管理连接
 - **前端**：模块化设计，每个 service 负责单一职责；配置常量集中在 `sigmaConfig.ts`
 
 ## ⚠️ 注意事项
@@ -265,15 +250,19 @@ npm run preview    # 预览生产构建
 2. **CORS 配置**：后端默认允许 `localhost:5173` 和 `127.0.0.1:5173`，如需修改请编辑 `backend/app/main.py`
 3. **首次启动慢**：首次创建物化视图可能需要 30-60 秒，之后刷新只需几秒
 
-## 📄 许可证
-
-[MIT License](LICENSE)
-
-## 🌐 部署到 VPS（纯静态模式）
+## 🌐 部署到 VPS
 
 > VPS 上**不需要** Python、数据库或 Node.js，只需 nginx 即可。
+> 项目以子路径方式部署在 `apophasis.top/rival-map/`，与 Astro 博客共存。
 
-### 步骤 1：在本地生成静态数据
+### 架构概览
+
+```
+apophasis.top/          → Astro 博客（/var/www/astro-blog/）
+apophasis.top/rival-map → 赛马图谱（/var/www/rival-map/）
+```
+
+### 步骤 1：生成静态数据
 
 在**有数据库的本地机器**上运行：
 
@@ -291,65 +280,81 @@ cd frontend
 npm run build
 ```
 
-构建产物在 `frontend/dist/`。
+### 步骤 3：自动部署前端（GitHub Actions）
 
-### 步骤 3：部署到 VPS
+推送到 `master` 分支后，GitHub Actions 会自动：
+1. 构建前端
+2. 通过 rsync 部署到 `/var/www/rival-map/`
 
-将以下两个目录上传到 VPS：
+### 步骤 4：手动同步 JSON 数据
 
-```
-frontend/dist/               → 前端页面
-backend/static_data/network/ → 预计算 JSON 数据
-```
+JSON 数据文件无法在 CI 中生成（需要访问 PostgreSQL），需要手动上传：
 
-建议统一放在一个目录下，例如 VPS 上的 `/var/www/rival-map/`：
+```bash
+# 首次部署
+rsync -rlvz --delete backend/static_data/network/ \
+  $SERVER_USER@$SERVER_IP:/var/www/rival-map/data/network/
 
-```
-/var/www/rival-map/
-├── index.html
-├── assets/
-│   ├── index-xxx.css
-│   └── index-xxx.js
-└── data/
-    └── network/
-        ├── 1_0_18_true.json
-        ├── 1_0_18_false.json
-        └── ...
+# 数据更新时
+rsync -rlvz --delete backend/static_data/network/ \
+  $SERVER_USER@$SERVER_IP:/var/www/rival-map/data/network/
 ```
 
-> ⚠️ 注意：需要将 `backend/static_data/network/` 放到 `frontend/dist/data/network/`，
-> 因为前端 fetch 的路径是相对路径 `./data/network/`。
+> 建议在 `~/.ssh/config` 中配置 VPS 别名，或使用 SSH agent 转发简化操作。
 
-### 步骤 4：配置 nginx
+### 步骤 5：nginx 配置
+
+在现有博客的 nginx `server` 块中追加一个 location：
 
 ```nginx
 server {
-    listen 80;
-    server_name your-domain.com;
+    server_name apophasis.top www.apophasis.top;
 
-    root /var/www/rival-map;
+    # 博客（根路径，不变）
+    root /var/www/astro-blog;
     index index.html;
 
-    # 启用 gzip 压缩（JSON 文件压缩率很高）
-    gzip on;
-    gzip_types application/json text/css application/javascript;
+    # ... 博客的现有配置不变 ...
 
-    # SPA 回退
-    location / {
-        try_files $uri $uri/ /index.html;
+    # rival-map 子路径
+    location /rival-map/ {
+        alias /var/www/rival-map/;
+        index index.html;
+        try_files $uri $uri/ /rival-map/index.html;
+
+        # JSON 文件缓存 1 天
+        location ~* \.json$ {
+            expires 1d;
+            add_header Cache-Control "public, max-age=86400";
+        }
     }
 }
 ```
 
-### 步骤 5：数据更新
-
-当 JRA 数据有更新时：
-
-1. 更新本地 PostgreSQL 数据
-2. 重新运行 `generate_static_data.py`
-3. 重新构建前端（如需要）
-4. 将 `data/network/` 目录 rsync 到 VPS
+重载 nginx：
 
 ```bash
-rsync -avz backend/static_data/network/ vps:/var/www/rival-map/data/network/
+sudo nginx -t && sudo systemctl reload nginx
 ```
+
+### VPS 目录结构
+
+```
+/var/www/
+├── astro-blog/          ← Astro 博客（不变）
+│   └── ...
+└── rival-map/           ← 赛马图谱
+    ├── index.html
+    ├── assets/
+    │   ├── index-xxx.css
+    │   └── index-xxx.js
+    └── data/
+        └── network/
+            ├── 1_0_18_true.json
+            ├── 1_0_18_false.json
+            └── ...
+```
+
+## 📄 许可证
+
+[MIT License](LICENSE)
