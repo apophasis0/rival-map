@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+from decimal import Decimal
 from pathlib import Path
 
 # 确保能导入 app 模块
@@ -21,6 +22,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import init_db_pool, close_db_pool
 from app.graph_service import fetch_horse_network
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """处理 Decimal 类型的 JSON 编码器"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 # ============ 参数范围配置 ============
 
@@ -75,7 +84,7 @@ def generate_all():
                             empty_count += 1
 
                         # 写入 JSON
-                        filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+                        filepath.write_text(json.dumps(data, cls=DecimalEncoder, ensure_ascii=False, indent=2))
                         size_kb = filepath.stat().st_size / 1024
                         mode_str = "严格" if strict else "宽松"
                         emoji = "🟢" if node_count > 0 else "⚪"
