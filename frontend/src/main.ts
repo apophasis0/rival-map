@@ -17,18 +17,21 @@ const API_BASE_URL = 'http://localhost:8000/api/network';
 const appContainer = document.getElementById('app') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
 const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
+const strictRankToggle = document.getElementById('strictRankToggle') as HTMLInputElement;
 const weightSlider = document.getElementById('weightSlider') as HTMLInputElement;
 const weightValueDisplay = document.getElementById('weightValue') as HTMLSpanElement;
 const prizeSlider = document.getElementById('prizeSlider') as HTMLInputElement;
 const prizeValueDisplay = document.getElementById('prizeValue') as HTMLSpanElement;
+const rankSlider = document.getElementById('rankSlider') as HTMLInputElement;
+const rankValueDisplay = document.getElementById('rankValue') as HTMLSpanElement;
 const collapseBtn = document.getElementById('collapsePanel') as HTMLButtonElement;
 const fabToggle = document.getElementById('fabToggle') as HTMLButtonElement;
 
 // ============ 主渲染函数 ============
 
-async function renderNetwork(minWeight: number, minPrize: number): Promise<void> {
+async function renderNetwork(minWeight: number, minPrize: number, maxRank: number, strictMode: boolean): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}`);
+    const response = await fetch(`${API_BASE_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}`);
     const data: BackendGraphData = await response.json();
 
     const width = window.innerWidth;
@@ -100,11 +103,23 @@ prizeSlider.addEventListener('input', (e) => {
 function updateGraph(): void {
   const minWeight = parseInt(weightSlider.value, 10);
   const minPrize = parseInt(prizeSlider.value, 10);
-  renderNetwork(minWeight, minPrize);
+  const maxRank = parseInt(rankSlider.value, 10) || 18;
+  const strictMode = strictRankToggle.checked;
+  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}`);
+  renderNetwork(minWeight, minPrize, maxRank, strictMode);
 }
 
 weightSlider.addEventListener('change', updateGraph);
 prizeSlider.addEventListener('change', updateGraph);
+
+// 滑块输入反馈
+rankSlider.addEventListener('input', (e) => {
+  const val = parseInt((e.target as HTMLInputElement).value, 10);
+  rankValueDisplay.innerText = val >= 18 ? '不限' : String(val);
+});
+
+rankSlider.addEventListener('change', updateGraph);
+strictRankToggle.addEventListener('change', updateGraph);
 
 // 面板折叠/展开
 collapseBtn.addEventListener('click', (e) => {

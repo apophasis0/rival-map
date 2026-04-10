@@ -203,6 +203,11 @@ cython_debug/
 
 # Claude Code
 .claude/
+CLAUDE.md
+
+# Qwen
+.qwen/
+QWEN.md
 
 # Ruff stuff:
 .ruff_cache/

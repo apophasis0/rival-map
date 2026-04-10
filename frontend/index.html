@@ -23,6 +23,17 @@
         万日元</label>
     <input type="range" id="prizeSlider" min="0" max="100000" value="0" step="1000">
 
+    <label for="rankSlider" style="margin-top: 15px;">G1最低名次: 前<span id="rankValue"
+                                                                          style="color: #2b6cb0; font-weight: 700;">不限</span></label>
+    <input type="range" id="rankSlider" min="1" max="18" value="18" step="1">
+    <small style="font-size: 11px; color: #718096; display: block; margin-top: 2px;">18 = 包含所有完赛马匹</small>
+
+    <div class="toggle-container" style="margin-top: 10px;">
+        <input type="checkbox" id="strictRankToggle" checked>
+        <label for="strictRankToggle"
+               style="display: inline; margin-left: 5px; cursor: pointer;">严格模式（同场都达标才连线）</label>
+    </div>
+
     <div class="toggle-container" style="margin-top: 20px;">
         <input type="checkbox" id="showLabelsToggle" checked>
         <label for="showLabelsToggle"

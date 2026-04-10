@@ -1,37 +1,53 @@
-import pandas as pd
+import time
 from .database import get_db_connection
 
 
-def fetch_horse_network(min_intersections: int = 2, min_prize: float = 0.0):
+def _has_materialized_views(conn):
+    """检查物化视图是否存在且已填充"""
+    try:
+        result = conn.execute("""
+            SELECT ispopulated FROM pg_matviews
+            WHERE matviewname = 'mv_g1_horse_pairs'
+        """).fetchone()
+        return result is not None and result['ispopulated']
+    except Exception:
+        return False
+
+
+def fetch_horse_network(
+    min_intersections: int = 2,
+    min_prize: float = 0.0,
+    max_rank: int = 18,
+    strict_rank_mode: bool = True
+):
     """
-    min_intersections: 至少共同参加过几次比赛才算“宿敌”
+    查询马匹竞争网络，使用 CTE 或物化视图优化查询性能
+
+    min_intersections: 至少共同参加过几次比赛才算"宿敌"
     min_prize: 最低奖金阈值
+    max_rank: 最低名次阈值（kakutei_jyuni <= max_rank 才算有效成绩）
+    strict_rank_mode: 名次过滤模式
+        - True (严格模式): 两匹马必须在**同一场比赛**中都达到名次阈值，才计算连线
+        - False (宽松模式): 只要两匹马**生涯中至少一次**达到名次阈值，任何共同参赛都计算连线
     """
+    t_start = time.time()
+
     with get_db_connection() as conn:
-        # 1. 提取连线：查找同场竞技的马对
-        link_query = """
-                     SELECT se1.ketto_num AS source, \
-                            se2.ketto_num AS target, \
-                            COUNT(*)      as weight
-                     FROM race_umas se1
-                              JOIN race_details ra ON se1.race_date = ra.race_date
-                         AND se1.jyo_cd = ra.jyo_cd
-                         AND se1.kaiji = ra.kaiji
-                         AND se1.nichiji = ra.nichiji
-                         AND se1.race_num = ra.race_num
-                              JOIN race_umas se2 ON se1.race_date = se2.race_date
-                         AND se1.jyo_cd = se2.jyo_cd
-                         AND se1.kaiji = se2.kaiji
-                         AND se1.nichiji = se2.nichiji
-                         AND se1.race_num = se2.race_num
-                         AND se1.umaban < se2.umaban
-                     WHERE true
-                       AND grade_cd IN ('g1', 'jg1')
-                       AND ra.data_kubun = '7'
-                     GROUP BY se1.ketto_num, se2.ketto_num
-                     HAVING COUNT(*) >= %s \
-                     """
-        raw_links = conn.execute(link_query, [min_intersections]).fetchall()
+        # 检查是否可以使用物化视图
+        use_mv = _has_materialized_views(conn)
+
+        if use_mv:
+            link_query, query_params = _build_query_with_mv(
+                min_intersections, max_rank, strict_rank_mode
+            )
+        else:
+            link_query, query_params = _build_query_cte(
+                min_intersections, max_rank, strict_rank_mode
+            )
+
+        t_query1 = time.time()
+        raw_links = conn.execute(link_query, query_params).fetchall()
+        t_query1_end = time.time()
 
         # 收集所有出现在连线中的独特马匹 ID
         candidate_horse_ids = set()
@@ -40,30 +56,170 @@ def fetch_horse_network(min_intersections: int = 2, min_prize: float = 0.0):
             candidate_horse_ids.add(link['target'])
 
         if not candidate_horse_ids:
+            print(f"[Perf] No links found. Total time: {time.time() - t_start:.3f}s")
             return {"nodes": [], "links": []}
 
-        # 2. 提取节点：计算奖金，并直接在 SQL 层面过滤掉奖金不达标的马
+        # 节点查询
         node_query = """
-                     SELECT ketto_num                                      as id, \
-                            MAX(bamei)                                     as name, \
-                            MAX(sex_cd)                                    as sex, \
-                            SUM(honsyokin + fukasyokin)::numeric / 100.0 as prize_score, \
-                            MIN(SUBSTRING(race_date::text, 1, 4))::integer as active_year
+                     SELECT ketto_num                                          as id,
+                            MAX(bamei)                                         as name,
+                            MAX(sex_cd)                                        as sex,
+                            SUM(honsyokin + fukasyokin)::numeric / 100.0     as prize_score,
+                            MIN(SUBSTRING(race_date::text, 1, 4))::integer     as active_year
                      FROM race_umas
-                     WHERE ketto_num = ANY (%s)
+                     WHERE ketto_num = ANY (%(horse_ids)s)
                      GROUP BY ketto_num
-                     -- 【新增】：只保留总奖金大于等于设定阈值的马匹
-                     HAVING SUM(honsyokin + fukasyokin)::numeric / 100.0 >= %s \
+                     HAVING SUM(honsyokin + fukasyokin)::numeric / 100.0 >= %(min_prize)s
                      """
-        # 传入 candidate_horse_ids 列表和 min_prize 阈值
-        nodes = conn.execute(node_query, [list(candidate_horse_ids), min_prize]).fetchall()
+        nodes = conn.execute(node_query, {
+            "horse_ids": list(candidate_horse_ids),
+            "min_prize": min_prize,
+        }).fetchall()
+        t_query2_end = time.time()
 
-        # 3. 极其关键的一步：清理连线
-        # 如果 A 和 B 比赛过，但 A 因为奖金太低被过滤掉了，我们需要把 A-B 的连线也删掉
+        # 清理连线：移除因奖金过滤而被孤立的边
         valid_node_ids = {node['id'] for node in nodes}
         links = [
             link for link in raw_links
             if link['source'] in valid_node_ids and link['target'] in valid_node_ids
         ]
 
+        t_total = time.time() - t_start
+        mode_str = "严格" if strict_rank_mode else "宽松"
+        engine_str = "MV" if use_mv else "CTE"
+        print(f"[Perf] [{mode_str}模式/{engine_str}] Links: {len(links)}/{len(raw_links)}, Nodes: {len(nodes)}/{len(candidate_horse_ids)}")
+        print(f"[Perf] Query1 (links): {t_query1_end - t_query1:.3f}s, Query2 (nodes): {t_query2_end - t_query1_end:.3f}s, Total: {t_total:.3f}s")
+
         return {"nodes": nodes, "links": links}
+
+
+def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode: bool):
+    """使用物化视图构建查询"""
+    if strict_rank_mode:
+        # 严格模式：需要重新计算，只考虑双方都达标的比赛
+        # 使用 mv_g1_horse_records 而不是 mv_g1_horse_pairs
+        query = """
+                 WITH qualified_records AS (
+                     SELECT ketto_num, race_date, jyo_cd, kaiji, nichiji, race_num, umaban
+                     FROM mv_g1_horse_records
+                     WHERE kakutei_jyuni <= %(max_rank)s
+                 ),
+                 horse_pairs AS (
+                     SELECT r1.ketto_num AS source,
+                            r2.ketto_num AS target,
+                            COUNT(*)      AS weight
+                     FROM qualified_records r1
+                              JOIN qualified_records r2 ON r1.race_date = r2.race_date
+                         AND r1.jyo_cd = r2.jyo_cd
+                         AND r1.kaiji = r2.kaiji
+                         AND r1.nichiji = r2.nichiji
+                         AND r1.race_num = r2.race_num
+                         AND r1.umaban < r2.umaban
+                     GROUP BY r1.ketto_num, r2.ketto_num
+                     HAVING COUNT(*) >= %(min_intersections)s
+                 )
+                 SELECT source, target, weight FROM horse_pairs
+                 """
+    else:
+        # 宽松模式：从预计算的 pairs 中直接过滤
+        # 只需要检查双方是否曾达标，无需 self-join！
+        query = """
+                 WITH qualified_horses AS (
+                     SELECT DISTINCT ketto_num
+                     FROM mv_g1_horse_records
+                     WHERE kakutei_jyuni <= %(max_rank)s
+                 )
+                 SELECT p.source, p.target, p.weight
+                 FROM mv_g1_horse_pairs p
+                 WHERE p.weight >= %(min_intersections)s
+                   AND p.source IN (SELECT ketto_num FROM qualified_horses)
+                   AND p.target IN (SELECT ketto_num FROM qualified_horses)
+                 """
+    return query, {"max_rank": max_rank, "min_intersections": min_intersections}
+
+
+def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bool):
+    """不使用物化视图，使用 CTE 构建查询（回退方案）"""
+    if strict_rank_mode:
+        # 严格模式
+        query = """
+                 WITH g1_records AS (
+                     SELECT ru.ketto_num, ru.umaban,
+                            ru.race_date, ru.jyo_cd, ru.kaiji, ru.nichiji, ru.race_num
+                     FROM race_umas ru
+                              JOIN race_details rd ON ru.race_date = rd.race_date
+                         AND ru.jyo_cd = rd.jyo_cd
+                         AND ru.kaiji = rd.kaiji
+                         AND ru.nichiji = rd.nichiji
+                         AND ru.race_num = rd.race_num
+                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                       AND ru.ketto_num <> '0000000000'
+                       AND rd.data_kubun IN ('7', 'A', 'B')
+                       AND ru.kakutei_jyuni > 0
+                       AND ru.kakutei_jyuni <= %(max_rank)s
+                 ),
+                 horse_pairs AS (
+                     SELECT r1.ketto_num AS source,
+                            r2.ketto_num AS target,
+                            COUNT(*)      AS weight
+                     FROM g1_records r1
+                              JOIN g1_records r2 ON r1.race_date = r2.race_date
+                         AND r1.jyo_cd = r2.jyo_cd
+                         AND r1.kaiji = r2.kaiji
+                         AND r1.nichiji = r2.nichiji
+                         AND r1.race_num = r2.race_num
+                         AND r1.umaban < r2.umaban
+                     GROUP BY r1.ketto_num, r2.ketto_num
+                     HAVING COUNT(*) >= %(min_intersections)s
+                 )
+                 SELECT source, target, weight FROM horse_pairs
+                 """
+    else:
+        # 宽松模式（优化版：使用 INNER JOIN 替代 IN SELECT）
+        query = """
+                 WITH qualified_horses AS (
+                     SELECT DISTINCT ru.ketto_num
+                     FROM race_umas ru
+                              JOIN race_details rd ON ru.race_date = rd.race_date
+                         AND ru.jyo_cd = rd.jyo_cd
+                         AND ru.kaiji = rd.kaiji
+                         AND ru.nichiji = rd.nichiji
+                         AND ru.race_num = rd.race_num
+                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                       AND ru.ketto_num <> '0000000000'
+                       AND rd.data_kubun IN ('7', 'A', 'B')
+                       AND ru.kakutei_jyuni > 0
+                       AND ru.kakutei_jyuni <= %(max_rank)s
+                 ),
+                 qualified_g1_records AS (
+                     SELECT ru.ketto_num, ru.umaban,
+                            ru.race_date, ru.jyo_cd, ru.kaiji, ru.nichiji, ru.race_num
+                     FROM race_umas ru
+                              INNER JOIN qualified_horses qh ON ru.ketto_num = qh.ketto_num
+                              JOIN race_details rd ON ru.race_date = rd.race_date
+                         AND ru.jyo_cd = rd.jyo_cd
+                         AND ru.kaiji = rd.kaiji
+                         AND ru.nichiji = rd.nichiji
+                         AND ru.race_num = rd.race_num
+                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                       AND ru.ketto_num <> '0000000000'
+                       AND rd.data_kubun IN ('7', 'A', 'B')
+                       AND ru.kakutei_jyuni > 0
+                 ),
+                 horse_pairs AS (
+                     SELECT r1.ketto_num AS source,
+                            r2.ketto_num AS target,
+                            COUNT(*)      AS weight
+                     FROM qualified_g1_records r1
+                              JOIN qualified_g1_records r2 ON r1.race_date = r2.race_date
+                         AND r1.jyo_cd = r2.jyo_cd
+                         AND r1.kaiji = r2.kaiji
+                         AND r1.nichiji = r2.nichiji
+                         AND r1.race_num = r2.race_num
+                         AND r1.umaban < r2.umaban
+                     GROUP BY r1.ketto_num, r2.ketto_num
+                     HAVING COUNT(*) >= %(min_intersections)s
+                 )
+                 SELECT source, target, weight FROM horse_pairs
+                 """
+    return query, {"max_rank": max_rank, "min_intersections": min_intersections}
