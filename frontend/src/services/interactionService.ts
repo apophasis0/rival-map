@@ -17,6 +17,17 @@ import {
 const tooltipEl = document.getElementById('tooltip') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
 
+// Tooltip 显示模式
+let tooltipMode: 'follow' | 'fixed' | 'hidden' = 'follow';
+
+export function setTooltipMode(mode: 'follow' | 'fixed' | 'hidden'): void {
+  tooltipMode = mode;
+  // 清除固定定位样式
+  if (mode !== 'fixed') {
+    tooltipEl.classList.remove('tooltip-fixed');
+  }
+}
+
 /** 设置高亮状态 */
 export function setHighlight(centerNodeId: string | null): void {
   const renderer = appState.renderer;
@@ -179,6 +190,8 @@ function createEdgeReducer(context: HighlightContext): (edge: string, data: Para
 
 /** 显示 Tooltip */
 export function showTooltip(nodeId: string, event: MouseEvent): void {
+  if (tooltipMode === 'hidden') return;
+
   const graph = appState.graph;
   if (!graph) return;
 
@@ -193,7 +206,6 @@ export function showTooltip(nodeId: string, event: MouseEvent): void {
     communityHtml = `<br><span style="color: #cbd5e1;">派系:</span> <span style="color: ${attrs.color}; font-weight: 600;">${communityLabel}</span>`;
   }
 
-  tooltipEl.style.opacity = '1';
   tooltipEl.innerHTML = `
     <strong>${attrs.name}</strong>
     <span style="font-size: 12px; color: #a0aec0; font-weight: normal;">(ID: ${nodeId})</span><br>
@@ -201,6 +213,19 @@ export function showTooltip(nodeId: string, event: MouseEvent): void {
     <span style="color: #cbd5e1;">总奖金:</span> <span style="color: #ffd700;">${prizeText}</span>
     ${communityHtml}
   `;
-  tooltipEl.style.left = (event.pageX + 20) + 'px';
-  tooltipEl.style.top = (event.pageY - 20) + 'px';
+  tooltipEl.style.opacity = '1';
+
+  if (tooltipMode === 'follow') {
+    tooltipEl.classList.remove('tooltip-fixed');
+    tooltipEl.style.left = (event.pageX + 20) + 'px';
+    tooltipEl.style.top = (event.pageY - 20) + 'px';
+    tooltipEl.style.right = 'auto';
+    tooltipEl.style.bottom = 'auto';
+  } else if (tooltipMode === 'fixed') {
+    tooltipEl.classList.add('tooltip-fixed');
+    tooltipEl.style.left = 'auto';
+    tooltipEl.style.top = 'auto';
+    tooltipEl.style.right = '20px';
+    tooltipEl.style.bottom = '20px';
+  }
 }

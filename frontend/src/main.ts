@@ -4,7 +4,7 @@ import { appState } from './state/appState';
 import { panelService } from './services/panelService';
 import { buildGraph } from './services/graphBuilder';
 import { initSigma, startLayout } from './services/rendererService';
-import { setHighlight, showTooltip } from './services/interactionService';
+import { setHighlight, showTooltip, setTooltipMode } from './services/interactionService';
 import type { BackendGraphData } from './types';
 import type { SigmaNodeEventPayload } from 'sigma/types';
 import { renderCommunityLegend } from './utils/communityUI';
@@ -60,6 +60,7 @@ const rankSlider = document.getElementById('rankSlider') as HTMLInputElement;
 const rankValueDisplay = document.getElementById('rankValue') as HTMLSpanElement;
 const collapseBtn = document.getElementById('collapsePanel') as HTMLButtonElement;
 const fabToggle = document.getElementById('fabToggle') as HTMLButtonElement;
+const tooltipModeSelect = document.getElementById('tooltipModeSelect') as HTMLSelectElement;
 
 // ============ 主渲染函数 ============
 
@@ -166,6 +167,13 @@ rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
 communityToggle.addEventListener('change', updateGraph);
 
+// Tooltip 显示模式切换
+tooltipModeSelect.addEventListener('change', () => {
+  const mode = tooltipModeSelect.value as 'follow' | 'fixed' | 'hidden';
+  setTooltipMode(mode);
+  localStorage.setItem('tooltipMode', mode);
+});
+
 // 面板折叠/展开
 collapseBtn.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -201,4 +209,14 @@ window.addEventListener('resize', () => {
 
 panelService.restore();
 restoreYearLayoutState();
+restoreTooltipModeState();
 updateGraph();
+
+/** 恢复保存的 tooltip 模式 */
+function restoreTooltipModeState(): void {
+  const savedMode = localStorage.getItem('tooltipMode') as 'follow' | 'fixed' | 'hidden' | null;
+  if (savedMode && ['follow', 'fixed', 'hidden'].includes(savedMode)) {
+    setTooltipMode(savedMode);
+    tooltipModeSelect.value = savedMode;
+  }
+}
