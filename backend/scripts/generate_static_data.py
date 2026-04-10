@@ -60,7 +60,7 @@ def generate_all():
                 for max_rank in MAX_RANK_VALUES:
                     for strict in STRICT_MODES:
                         count += 1
-                        filename = f"{weight}_{prize}_{max_rank}_{strict}.json"
+                        filename = f"{weight}_{prize}_{max_rank}_{str(strict).lower()}.json"
                         filepath = OUTPUT_DIR / filename
 
                         # 跳过已有文件（断点续传）
