@@ -12,11 +12,8 @@ import { renderCommunityLegend } from './utils/communityUI';
 
 // ============ 全局常量 ============
 
-// 开发模式：连接后端 API（需要启动 FastAPI）
-// 生产模式：从 Cloudflare R2 加载静态 JSON 文件
-const API_URL = import.meta.env.DEV
-  ? 'http://localhost:8000/api/network'
-  : 'https://rival-map-data.apophasis.top';
+// API 基础路径（使用相对路径，由 Nginx 反向代理处理）
+const API_BASE = '/api';
 
 /** 统一的数据获取函数 */
 async function fetchNetworkData(
@@ -27,40 +24,12 @@ async function fetchNetworkData(
   includeSire: boolean,
   includeDam: boolean,
 ): Promise<BackendGraphData> {
-  if (import.meta.env.DEV) {
-    // 开发模式：调用后端 API
-    const response = await fetch(
-      `${API_URL}?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`,
-    );
-    if (!response.ok) {
-      throw new Error(`后端请求失败: ${response.status} ${response.statusText}`);
-    }
-    return response.json();
-  } else {
-    // 生产模式：从 R2 加载静态 JSON
-    const filename = `${minWeight}_${minPrize}_${maxRank}_${strictMode}.json`;
-    const response = await fetch(`${API_URL}/network/${filename}`);
-    if (!response.ok) {
-      throw new Error(`未找到数据文件: ${filename} (${response.status})`);
-    }
-    const data: BackendGraphData = await response.json();
-
-    // 血统边：从 R2 获取（如果开启）
-    if ((includeSire || includeDam) && data.nodes.length > 0) {
-      const pedigreeUrl = `${API_URL}/pedigree.json?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
-      try {
-        const pedResp = await fetch(pedigreeUrl);
-        if (pedResp.ok) {
-          const pedData = await pedResp.json();
-          data.links.push(...pedData.links);
-        }
-      } catch (e) {
-        console.warn('获取血统边失败:', e);
-      }
-    }
-
-    return data;
+  const url = `${API_BASE}/network?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`后端请求失败: ${response.status} ${response.statusText}`);
   }
+  return response.json();
 }
 
 // ============ DOM 元素 ============
@@ -228,15 +197,13 @@ function togglePedigreeEdges(): void {
 
 // 从 API 获取血统边并添加到现有图上
 async function fetchPedigreeEdgesFromApi(includeSire: boolean, includeDam: boolean): Promise<void> {
-  if (!import.meta.env.DEV) return; // 生产模式暂不支持
-
   const minWeight = parseInt(weightSlider.value, 10);
   const minPrize = parseInt(prizeSlider.value, 10);
   const maxRank = parseInt(rankSlider.value, 10) || 18;
   const strictMode = strictRankToggle.checked;
 
   try {
-    const url = `http://localhost:8000/api/pedigree?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
+    const url = `${API_BASE}/pedigree?minWeight=${minWeight}&minPrize=${minPrize}&maxRank=${maxRank}&strictMode=${strictMode}&includeSire=${includeSire}&includeDam=${includeDam}`;
     const resp = await fetch(url);
     if (!resp.ok) {
       console.warn(`获取血统边失败: ${resp.status}`);

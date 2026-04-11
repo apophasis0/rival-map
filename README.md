@@ -264,6 +264,11 @@ npm run preview    # 预览生产构建
 Nginx（已有）
   ├── /rival-map/     → 前端静态文件（/var/www/rival-map/）
   └── /api/           → 反向代理 → Docker 容器（localhost:8000）
+
+或者（子域名部署）：
+
+rival-map.apophasis.top  → 前端静态文件
+api.apophasis.top        → 反向代理 → Docker 容器
 ```
 
 ### 前置条件

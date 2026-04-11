@@ -55,10 +55,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="JRA Network API", lifespan=lifespan)
 
-# 配置 CORS，允许前端 Vite (通常在 5173 端口) 跨域请求后端 API
+# 配置 CORS，允许前端跨域请求
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://apophasis.top",
+        "https://www.apophasis.top",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
