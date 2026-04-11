@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from decimal import Decimal
 from typing import Any
 
 import redis
@@ -16,6 +17,14 @@ CACHE_PREFIX = "rival_map:"
 DEFAULT_TTL = 3600
 
 
+class _CacheEncoder(json.JSONEncoder):
+    """支持 Decimal 类型的 JSON 编码器"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+
 def init_redis():
     """在 FastAPI 启动时初始化 Redis 连接"""
     global redis_client
@@ -24,6 +33,9 @@ def init_redis():
     port = int(os.getenv("REDIS_PORT", "6379"))
     password = os.getenv("REDIS_PASSWORD", "") or None
     db = int(os.getenv("REDIS_DB", "0"))
+
+    # 记录连接信息（不记录密码）
+    logger.info(f"[Redis] 尝试连接: {host}:{port}, DB={db}, 密码={'已配置' if password else '未配置'}")
 
     try:
         redis_client = redis.Redis(
@@ -37,11 +49,14 @@ def init_redis():
         )
         redis_client.ping()
         logger.info(f"[Redis] 连接成功: {host}:{port}, DB={db}")
+    except redis.AuthenticationError as e:
+        logger.error(f"[Redis] 认证失败！请检查 REDIS_PASSWORD 环境变量是否正确配置。详细信息: {e}")
+        redis_client = None
     except redis.ConnectionError as e:
-        logger.warning(f"[Redis] 连接失败（缓存功能将被禁用）: {e}")
+        logger.error(f"[Redis] 连接失败: {e}")
         redis_client = None
     except Exception as e:
-        logger.warning(f"[Redis] 初始化异常（缓存功能将被禁用）: {e}")
+        logger.error(f"[Redis] 初始化异常: {e}")
         redis_client = None
 
 
@@ -86,7 +101,7 @@ def set_cache(key: str, value: Any, ttl: int | None = None) -> bool:
 
     try:
         full_key = f"{CACHE_PREFIX}{key}"
-        serialized = json.dumps(value, ensure_ascii=False)
+        serialized = json.dumps(value, ensure_ascii=False, cls=_CacheEncoder)
         redis_client.setex(full_key, ttl or DEFAULT_TTL, serialized)
         return True
     except redis.RedisError as e:

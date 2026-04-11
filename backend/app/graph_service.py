@@ -2,12 +2,18 @@ import time
 from .database import get_db_connection
 
 
+MV_GRADE_CODES = {
+    "g1_only": ("'g1'", "'jg1'"),
+    "g1_g2": ("'g1'", "'jg1'", "'g2'", "'jg2'"),
+}
+
+
 def _has_materialized_views(conn):
-    """检查物化视图是否存在且已填充"""
+    """检查新物化视图是否存在且已填充"""
     try:
         result = conn.execute("""
             SELECT ispopulated FROM pg_matviews
-            WHERE matviewname = 'mv_g1_horse_pairs'
+            WHERE matviewname = 'mv_g1g2_horse_pairs'
         """).fetchone()
         return result is not None and result['ispopulated']
     except Exception:
@@ -94,11 +100,11 @@ def fetch_horse_network(
 
     with get_db_connection() as conn:
         # 检查是否可以使用物化视图
-        use_mv = _has_materialized_views(conn) and not include_g2
+        use_mv = _has_materialized_views(conn)
 
         if use_mv:
             link_query, query_params = _build_query_with_mv(
-                min_intersections, max_rank, strict_rank_mode, include_g2=False
+                min_intersections, max_rank, strict_rank_mode, include_g2=include_g2
             )
         else:
             link_query, query_params = _build_query_cte(
@@ -147,7 +153,7 @@ def fetch_horse_network(
         t_total = time.time() - t_start
         mode_str = "严格" if strict_rank_mode else "宽松"
         g2_str = "+G2" if include_g2 else ""
-        engine_str = "MV" if use_mv else f"CTE{g2_str}"
+        engine_str = f"MV{g2_str}" if use_mv else f"CTE{g2_str}"
         print(f"[Perf] [{mode_str}模式/{engine_str}] Links: {len(links)}/{len(raw_links)}, Nodes: {len(nodes)}/{len(candidate_horse_ids)}")
         print(f"[Perf] Query1 (links): {t_query1_end - t_query1:.3f}s, Query2 (nodes): {t_query2_end - t_query1_end:.3f}s, Total: {t_total:.3f}s")
 
@@ -157,20 +163,20 @@ def fetch_horse_network(
 def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode: bool, include_g2: bool = False):
     """使用物化视图构建查询
 
-    注意：物化视图仅包含 G1/JG1 数据，include_g2=True 时自动回退到 CTE
+    物化视图 mv_g1g2_* 包含 G1/JG1/G2/JG2 数据，通过 grade_cd 字段动态过滤
     """
-    if include_g2:
-        # 物化视图不包含 G2 数据，回退到 CTE
-        return _build_query_cte(min_intersections, max_rank, strict_rank_mode, include_g2=True)
+    grades = MV_GRADE_CODES["g1_g2"] if include_g2 else MV_GRADE_CODES["g1_only"]
+    grade_filter = f"grade_cd IN ({', '.join(grades)})"
 
     if strict_rank_mode:
         # 严格模式：需要重新计算，只考虑双方都达标的比赛
-        # 使用 mv_g1_horse_records 而不是 mv_g1_horse_pairs
-        query = """
+        # 使用 mv_g1g2_horse_records 而不是 mv_g1g2_horse_pairs
+        query = f"""
                  WITH qualified_records AS (
                      SELECT ketto_num, race_date, jyo_cd, kaiji, nichiji, race_num, umaban
-                     FROM mv_g1_horse_records
-                     WHERE kakutei_jyuni <= %(max_rank)s
+                     FROM mv_g1g2_horse_records
+                     WHERE {grade_filter}
+                       AND kakutei_jyuni <= %(max_rank)s
                  ),
                  horse_pairs AS (
                      SELECT r1.ketto_num AS source,
@@ -190,17 +196,17 @@ def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode
                  """
     else:
         # 宽松模式：从预计算的 pairs 中直接过滤
-        # 只需要检查双方是否曾达标，无需 self-join！
-        query = """
+        # 需要先过滤 records 得到合格马匹，再从 pairs 中筛选
+        query = f"""
                  WITH qualified_horses AS (
                      SELECT DISTINCT ketto_num
-                     FROM mv_g1_horse_records
-                     WHERE kakutei_jyuni <= %(max_rank)s
+                     FROM mv_g1g2_horse_records
+                     WHERE {grade_filter}
+                       AND kakutei_jyuni <= %(max_rank)s
                  )
                  SELECT p.source, p.target, p.weight
-                 FROM mv_g1_horse_pairs p
-                 WHERE p.weight >= %(min_intersections)s
-                   AND p.source IN (SELECT ketto_num FROM qualified_horses)
+                 FROM mv_g1g2_horse_pairs p
+                 WHERE p.source IN (SELECT ketto_num FROM qualified_horses)
                    AND p.target IN (SELECT ketto_num FROM qualified_horses)
                  """
     return query, {"max_rank": max_rank, "min_intersections": min_intersections}

@@ -20,10 +20,10 @@ def refresh_materialized_views():
     """
     try:
         with get_db_connection() as conn:
-            # 检查物化视图是否存在
+            # 检查新物化视图是否存在
             result = conn.execute("""
                 SELECT EXISTS (
-                    SELECT 1 FROM pg_matviews WHERE matviewname = 'mv_g1_horse_records'
+                    SELECT 1 FROM pg_matviews WHERE matviewname = 'mv_g1g2_horse_records'
                 )
             """).fetchone()
 
@@ -33,13 +33,13 @@ def refresh_materialized_views():
 
             # 刷新两个物化视图
             logger.info("[MV] 开始刷新物化视图...")
-            conn.execute("REFRESH MATERIALIZED VIEW mv_g1_horse_records")
+            conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g2_horse_records")
             conn.commit()
-            logger.info("[MV] mv_g1_horse_records 刷新完成")
+            logger.info("[MV] mv_g1g2_horse_records 刷新完成")
 
-            conn.execute("REFRESH MATERIALIZED VIEW mv_g1_horse_pairs")
+            conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g2_horse_pairs")
             conn.commit()
-            logger.info("[MV] mv_g1_horse_pairs 刷新完成")
+            logger.info("[MV] mv_g1g2_horse_pairs 刷新完成")
 
             logger.info("[MV] 所有物化视图刷新完成！")
     except Exception as e:
