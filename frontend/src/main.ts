@@ -13,7 +13,7 @@ import { renderCommunityLegend } from './utils/communityUI';
 // ============ 全局常量 ============
 
 // API 基础路径（使用相对路径，由 Nginx 反向代理处理）
-const API_BASE = '/api';
+const API_BASE = '/rival-map/api';
 
 /** 统一的数据获取函数 */
 async function fetchNetworkData(
