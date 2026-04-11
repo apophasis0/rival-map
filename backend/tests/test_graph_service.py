@@ -225,8 +225,10 @@ class TestQueryModes:
 
     def test_strict_mode_with_mv(self, mock_db):
         """严格模式 + 物化视图"""
-        mock_db.execute.return_value.fetchone.return_value = {"ispopulated": True}
-        mock_db.execute.return_value.fetchall.return_value = []
+        _setup_mock_execute(mock_db, [
+            {"fetchone": {"ispopulated": True}},
+            {"fetchall": []},
+        ])
 
         fetch_horse_network(strict_rank_mode=True, max_rank=10)
 
@@ -237,11 +239,41 @@ class TestQueryModes:
 
     def test_loose_mode_with_mv(self, mock_db):
         """宽松模式 + 物化视图"""
-        mock_db.execute.return_value.fetchone.return_value = {"ispopulated": True}
-        mock_db.execute.return_value.fetchall.return_value = []
+        _setup_mock_execute(mock_db, [
+            {"fetchone": {"ispopulated": True}},
+            {"fetchall": []},
+        ])
 
         fetch_horse_network(strict_rank_mode=False, max_rank=10)
 
         call_args = mock_db.execute.call_args
         query = call_args[0][0]
         assert "qualified_horses" in query
+
+    def test_include_g2_uses_cte(self, mock_db):
+        """include_g2=True 时强制使用 CTE（物化视图不含 G2）"""
+        _setup_mock_execute(mock_db, [
+            {"fetchall": []},  # CTE 查询无结果
+        ])
+
+        fetch_horse_network(include_g2=True)
+
+        call_args = mock_db.execute.call_args
+        query = call_args[0][0]
+        assert "g2" in query.lower()
+        assert "jg2" in query.lower()
+
+    def test_include_g2_grade_filter(self, mock_db):
+        """验证 G2 查询的 grade_cd 过滤条件"""
+        _setup_mock_execute(mock_db, [
+            {"fetchall": []},
+        ])
+
+        fetch_horse_network(include_g2=True, strict_rank_mode=False)
+
+        call_args = mock_db.execute.call_args
+        query = call_args[0][0]
+        assert "'g1'" in query
+        assert "'jg1'" in query
+        assert "'g2'" in query
+        assert "'jg2'" in query

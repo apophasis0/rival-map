@@ -103,6 +103,7 @@ class TestNetworkEndpoint:
         assert call_kwargs["min_prize"] == 0.0
         assert call_kwargs["max_rank"] == 18
         assert call_kwargs["strict_rank_mode"] is True
+        assert call_kwargs["include_g2"] is False
 
     def test_network_custom_params(self, test_client, mock_cache_miss, mock_fetch_network, mock_set_cache):
         """自定义参数请求"""
@@ -158,6 +159,15 @@ class TestNetworkEndpoint:
         call_kwargs = mock_fetch_pedigree.call_args[1]
         assert "sire" in call_kwargs["parent_types"]
         assert "dam" in call_kwargs["parent_types"]
+
+    def test_network_include_g2(self, test_client, mock_cache_miss, mock_fetch_network, mock_set_cache):
+        """包含 G2/JG2 比赛"""
+        response = test_client.get("/api/network?includeG2=true")
+
+        assert response.status_code == 200
+
+        call_kwargs = mock_fetch_network.call_args[1]
+        assert call_kwargs["include_g2"] is True
 
     def test_network_cache_hit(self, test_client, mock_cache_hit):
         """缓存命中时直接返回缓存数据"""

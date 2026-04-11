@@ -76,7 +76,8 @@ def fetch_horse_network(
     min_intersections: int = 2,
     min_prize: float = 0.0,
     max_rank: int = 18,
-    strict_rank_mode: bool = True
+    strict_rank_mode: bool = True,
+    include_g2: bool = False
 ):
     """
     查询马匹竞争网络，使用 CTE 或物化视图优化查询性能
@@ -87,20 +88,21 @@ def fetch_horse_network(
     strict_rank_mode: 名次过滤模式
         - True (严格模式): 两匹马必须在**同一场比赛**中都达到名次阈值，才计算连线
         - False (宽松模式): 只要两匹马**生涯中至少一次**达到名次阈值，任何共同参赛都计算连线
+    include_g2: 是否将 G2/JG2 比赛也计入统计
     """
     t_start = time.time()
 
     with get_db_connection() as conn:
         # 检查是否可以使用物化视图
-        use_mv = _has_materialized_views(conn)
+        use_mv = _has_materialized_views(conn) and not include_g2
 
         if use_mv:
             link_query, query_params = _build_query_with_mv(
-                min_intersections, max_rank, strict_rank_mode
+                min_intersections, max_rank, strict_rank_mode, include_g2=False
             )
         else:
             link_query, query_params = _build_query_cte(
-                min_intersections, max_rank, strict_rank_mode
+                min_intersections, max_rank, strict_rank_mode, include_g2=include_g2
             )
 
         t_query1 = time.time()
@@ -144,15 +146,23 @@ def fetch_horse_network(
 
         t_total = time.time() - t_start
         mode_str = "严格" if strict_rank_mode else "宽松"
-        engine_str = "MV" if use_mv else "CTE"
+        g2_str = "+G2" if include_g2 else ""
+        engine_str = "MV" if use_mv else f"CTE{g2_str}"
         print(f"[Perf] [{mode_str}模式/{engine_str}] Links: {len(links)}/{len(raw_links)}, Nodes: {len(nodes)}/{len(candidate_horse_ids)}")
         print(f"[Perf] Query1 (links): {t_query1_end - t_query1:.3f}s, Query2 (nodes): {t_query2_end - t_query1_end:.3f}s, Total: {t_total:.3f}s")
 
         return {"nodes": nodes, "links": links}
 
 
-def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode: bool):
-    """使用物化视图构建查询"""
+def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode: bool, include_g2: bool = False):
+    """使用物化视图构建查询
+
+    注意：物化视图仅包含 G1/JG1 数据，include_g2=True 时自动回退到 CTE
+    """
+    if include_g2:
+        # 物化视图不包含 G2 数据，回退到 CTE
+        return _build_query_cte(min_intersections, max_rank, strict_rank_mode, include_g2=True)
+
     if strict_rank_mode:
         # 严格模式：需要重新计算，只考虑双方都达标的比赛
         # 使用 mv_g1_horse_records 而不是 mv_g1_horse_pairs
@@ -196,11 +206,17 @@ def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode
     return query, {"max_rank": max_rank, "min_intersections": min_intersections}
 
 
-def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bool):
+def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bool, include_g2: bool = False):
     """不使用物化视图，使用 CTE 构建查询（回退方案）"""
+    # 根据 include_g2 动态生成 grade_cd 过滤条件
+    if include_g2:
+        grade_filter = "rd.grade_cd IN ('g1', 'jg1', 'g2', 'jg2')"
+    else:
+        grade_filter = "rd.grade_cd IN ('g1', 'jg1')"
+
     if strict_rank_mode:
         # 严格模式
-        query = """
+        query = f"""
                  WITH g1_records AS (
                      SELECT ru.ketto_num, ru.umaban,
                             ru.race_date, ru.jyo_cd, ru.kaiji, ru.nichiji, ru.race_num
@@ -210,7 +226,7 @@ def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bo
                          AND ru.kaiji = rd.kaiji
                          AND ru.nichiji = rd.nichiji
                          AND ru.race_num = rd.race_num
-                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                     WHERE {grade_filter}
                        AND ru.ketto_num <> '0000000000'
                        AND rd.data_kubun IN ('7', 'A', 'B')
                        AND ru.kakutei_jyuni > 0
@@ -234,7 +250,7 @@ def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bo
                  """
     else:
         # 宽松模式（优化版：使用 INNER JOIN 替代 IN SELECT）
-        query = """
+        query = f"""
                  WITH qualified_horses AS (
                      SELECT DISTINCT ru.ketto_num
                      FROM race_umas ru
@@ -243,7 +259,7 @@ def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bo
                          AND ru.kaiji = rd.kaiji
                          AND ru.nichiji = rd.nichiji
                          AND ru.race_num = rd.race_num
-                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                     WHERE {grade_filter}
                        AND ru.ketto_num <> '0000000000'
                        AND rd.data_kubun IN ('7', 'A', 'B')
                        AND ru.kakutei_jyuni > 0
@@ -259,7 +275,7 @@ def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bo
                          AND ru.kaiji = rd.kaiji
                          AND ru.nichiji = rd.nichiji
                          AND ru.race_num = rd.race_num
-                     WHERE rd.grade_cd IN ('g1', 'jg1')
+                     WHERE {grade_filter}
                        AND ru.ketto_num <> '0000000000'
                        AND rd.data_kubun IN ('7', 'A', 'B')
                        AND ru.kakutei_jyuni > 0

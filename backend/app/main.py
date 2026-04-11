@@ -81,7 +81,8 @@ async def get_network(
     max_rank: int = Query(18, alias="maxRank"),
     strict_mode: bool = Query(True, alias="strictMode"),
     include_sire: bool = Query(False, alias="includeSire"),
-    include_dam: bool = Query(False, alias="includeDam")
+    include_dam: bool = Query(False, alias="includeDam"),
+    include_g2: bool = Query(False, alias="includeG2")
 ):
     """
     获取赛马网络图谱数据（仅宿敌边 + 可选的血统边）
@@ -94,6 +95,7 @@ async def get_network(
         "strictMode": strict_mode,
         "includeSire": include_sire,
         "includeDam": include_dam,
+        "includeG2": include_g2,
     }
     cache_key = generate_cache_key("network", cache_params)
     cached_data = get_cache(cache_key)
@@ -109,7 +111,8 @@ async def get_network(
         min_intersections=min_weight,
         min_prize=min_prize,
         max_rank=max_rank,
-        strict_rank_mode=strict_mode
+        strict_rank_mode=strict_mode,
+        include_g2=include_g2
     )
 
     # 如果需要血统边，查询并添加到 links 中
@@ -144,7 +147,8 @@ async def get_pedigree(
     max_rank: int = Query(18, alias="maxRank"),
     strict_mode: bool = Query(True, alias="strictMode"),
     include_sire: bool = Query(False, alias="includeSire"),
-    include_dam: bool = Query(False, alias="includeDam")
+    include_dam: bool = Query(False, alias="includeDam"),
+    include_g2: bool = Query(False, alias="includeG2")
 ):
     """
     仅返回血统边（轻量端点，用于在已有图上叠加血统边）
@@ -157,6 +161,7 @@ async def get_pedigree(
         "strictMode": strict_mode,
         "includeSire": include_sire,
         "includeDam": include_dam,
+        "includeG2": include_g2,
     }
     cache_key = generate_cache_key("pedigree", cache_params)
     cached_data = get_cache(cache_key)
@@ -173,7 +178,8 @@ async def get_pedigree(
         min_intersections=min_weight,
         min_prize=min_prize,
         max_rank=max_rank,
-        strict_rank_mode=strict_mode
+        strict_rank_mode=strict_mode,
+        include_g2=include_g2
     )
 
     if not rival_data["nodes"]:
