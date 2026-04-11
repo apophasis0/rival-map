@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import get_db_connection, init_db_pool, close_db_pool
 from .graph_service import fetch_horse_network, fetch_pedigree_links
+from .cache import init_redis, close_redis, get_cache, set_cache, generate_cache_key
 
 logger = logging.getLogger("rival_map")
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +51,9 @@ async def lifespan(app: FastAPI):
     """应用启动时初始化连接池，关闭时清理"""
     init_db_pool()
     refresh_materialized_views()
+    init_redis()
     yield
+    close_redis()
     close_db_pool()
 
 
@@ -82,6 +86,25 @@ async def get_network(
     """
     获取赛马网络图谱数据（仅宿敌边 + 可选的血统边）
     """
+    # 尝试从缓存获取
+    cache_params = {
+        "minWeight": min_weight,
+        "minPrize": min_prize,
+        "maxRank": max_rank,
+        "strictMode": strict_mode,
+        "includeSire": include_sire,
+        "includeDam": include_dam,
+    }
+    cache_key = generate_cache_key("network", cache_params)
+    cached_data = get_cache(cache_key)
+
+    if cached_data is not None:
+        logger.info(f"[Cache] 命中缓存: {cache_key}")
+        return cached_data
+
+    logger.info(f"[Cache] 未命中缓存，查询数据库: {cache_key}")
+
+    # 缓存未命中，查询数据库
     data = fetch_horse_network(
         min_intersections=min_weight,
         min_prize=min_prize,
@@ -107,6 +130,10 @@ async def get_network(
         # 合并两种边
         data["links"].extend(pedigree_links)
 
+    # 存入缓存
+    ttl = int(os.getenv("CACHE_TTL", "3600"))
+    set_cache(cache_key, data, ttl=ttl)
+
     return data
 
 
@@ -122,6 +149,25 @@ async def get_pedigree(
     """
     仅返回血统边（轻量端点，用于在已有图上叠加血统边）
     """
+    # 尝试从缓存获取
+    cache_params = {
+        "minWeight": min_weight,
+        "minPrize": min_prize,
+        "maxRank": max_rank,
+        "strictMode": strict_mode,
+        "includeSire": include_sire,
+        "includeDam": include_dam,
+    }
+    cache_key = generate_cache_key("pedigree", cache_params)
+    cached_data = get_cache(cache_key)
+
+    if cached_data is not None:
+        logger.info(f"[Cache] 命中缓存: {cache_key}")
+        return cached_data
+
+    logger.info(f"[Cache] 未命中缓存，查询数据库: {cache_key}")
+
+    # 缓存未命中，查询数据库
     # 先获取节点列表
     rival_data = fetch_horse_network(
         min_intersections=min_weight,
@@ -131,23 +177,28 @@ async def get_pedigree(
     )
 
     if not rival_data["nodes"]:
-        return {"links": []}
+        result = {"links": []}
+    else:
+        parent_types = []
+        if include_sire:
+            parent_types.append("sire")
+        if include_dam:
+            parent_types.append("dam")
 
-    parent_types = []
-    if include_sire:
-        parent_types.append("sire")
-    if include_dam:
-        parent_types.append("dam")
+        node_ids = [n["id"] for n in rival_data["nodes"]]
+        valid_ids = set(node_ids)
+        pedigree_links = fetch_pedigree_links(node_ids, parent_types=parent_types if parent_types else None)
 
-    node_ids = [n["id"] for n in rival_data["nodes"]]
-    valid_ids = set(node_ids)
-    pedigree_links = fetch_pedigree_links(node_ids, parent_types=parent_types if parent_types else None)
+        # 只返回两端节点都在图谱中的血统边
+        links = [
+            {**link, "linkType": link["linkType"]}
+            for link in pedigree_links
+            if link["source"] in valid_ids and link["target"] in valid_ids
+        ]
+        result = {"links": links}
 
-    # 只返回两端节点都在图谱中的血统边
-    links = [
-        {**link, "linkType": link["linkType"]}
-        for link in pedigree_links
-        if link["source"] in valid_ids and link["target"] in valid_ids
-    ]
+    # 存入缓存
+    ttl = int(os.getenv("CACHE_TTL", "3600"))
+    set_cache(cache_key, result, ttl=ttl)
 
-    return {"links": links}
+    return result

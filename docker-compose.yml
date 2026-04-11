@@ -13,6 +13,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: 127.0.0.1
       DB_PORT: ${DB_PORT:-5432}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      CACHE_TTL: ${CACHE_TTL:-3600}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs')"]
       interval: 30s
