@@ -279,6 +279,7 @@ input[type="checkbox"]:checked::before {
 
 .line-indicator.sire { background: #4f46e5; }
 .line-indicator.dam { background: #ec4899; }
+.line-indicator.g2 { background: #10b981; }
 
 /* 下拉选择 */
 .sidebar-select {
