@@ -66,11 +66,8 @@ DB_PORT=5432
 #### 3. 创建索引和物化视图
 
 ```bash
-# 创建复合索引（5-20倍加速）
-psql -U <user> -d <database> -f backend/create_indexes.sql
-
-# 创建物化视图（宽松模式 8-26s → 0.1-0.5s）
-psql -U <user> -d <database> -f backend/create_materialized_views.sql
+# 一键完成：创建索引 + 物化视图 + 权限管理（将 your_app_user 替换为你的 DB_USER）
+psql -U postgres -d <database> -v app_user="'your_app_user'" -f backend/setup_database.sql
 ```
 
 > ⏱️ 首次创建物化视图可能需要 30-60 秒（取决于数据量），之后刷新只需几秒。
@@ -151,11 +148,8 @@ rival-map/
 │   │   ├── main.py                 # FastAPI 应用，连接池 + lifespan 事件
 │   │   ├── graph_service.py        # 核心查询逻辑（CTE / 物化视图自适应）
 │   │   └── database.py             # PostgreSQL 连接池（psycopg_pool）
-│   ├── Dockerfile                  # Docker 容器构建配置
-│   ├── .dockerignore               # Docker 构建排除文件
-│   ├── create_indexes.sql          # 创建复合索引脚本
-│   ├── create_materialized_views.sql  # 创建物化视图脚本
-│   └── refresh_materialized_views.sql # 手动刷新物化视图脚本
+│   ├── setup_database.sql            # 一键设置数据库（索引+物化视图+权限）
+│   └── Dockerfile                    # Docker 容器构建配置
 ├── frontend/
 │   ├── src/
 │   │   ├── main.ts                 # 入口文件（事件绑定、渲染流程）
@@ -188,16 +182,18 @@ rival-map/
 
 | 索引名称 | 作用 | 预期加速 |
 |---------|------|---------|
-| `idx_race_details_g1` | 加速 G1/JG1 比赛过滤 | 5-10x |
+| `idx_race_details_g1` | 加速 G1/JG1/G2 比赛过滤 | 5-10x |
 | `idx_race_umas_g1_lookup` | 加速连线查询的 JOIN 和名次过滤 | 10-20x |
 | `idx_race_umas_ketto` | 加速按马匹 ID 查询 | 5-10x |
+| `uk_mv_g1g2_horse_records` | **唯一索引**，支持 CONCURRENTLY 刷新 | 必需 |
+| `uk_mv_g1g2_horse_pairs` | **唯一索引**，支持 CONCURRENTLY 刷新 | 必需 |
 
 ### 物化视图
 
 | 物化视图 | 内容 | 查询方式 |
 |---------|------|---------|
-| `mv_g1_horse_records` | 预计算所有 G1 参赛记录（避免重复 JOIN） | CTE 查询 |
-| `mv_g1_horse_pairs` | 预计算所有马匹组合的共同参赛次数（避免 self-join） | 直接过滤 |
+| `mv_g1g2_horse_records` | 预计算所有 G1/G2 参赛记录（避免重复 JOIN） | CTE 查询 |
+| `mv_g1g2_horse_pairs` | 预计算所有马匹组合的共同参赛次数（避免 self-join） | 直接过滤 |
 
 **性能对比：**
 
@@ -216,7 +212,8 @@ rival-map/
 
 **手动刷新**（数据更新后）：
 ```bash
-psql -U <user> -d <database> -f backend/refresh_materialized_views.sql
+psql -U postgres -d <database> -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g2_horse_records;"
+psql -U postgres -d <database> -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g2_horse_pairs;"
 ```
 
 **定时刷新**：建议在数据导入脚本末尾添加 `REFRESH MATERIALIZED VIEW` 命令，或设置 cron job 定期执行。
@@ -246,7 +243,7 @@ npm run preview    # 预览生产构建
 
 ## ⚠️ 注意事项
 
-1. **数据库要求**：需要 `race_umas` 和 `race_details` 两张表，字段参见 `backend/create_indexes.sql` 中的查询
+1. **数据库要求**：需要 `race_umas` 和 `race_details` 两张表，字段参见 `backend/setup_database.sql` 中的查询
 2. **CORS 配置**：后端默认允许 `localhost:5173` 和 `127.0.0.1:5173`，如需修改请编辑 `backend/app/main.py`
 3. **首次启动慢**：首次创建物化视图可能需要 30-60 秒，之后刷新只需几秒
 
@@ -280,8 +277,7 @@ api.apophasis.top        → 反向代理 → Docker 容器
 2. **数据表**：`race_umas` 和 `race_details`
 3. **索引和物化视图**：
    ```bash
-   psql -U <user> -d <database> -f backend/create_indexes.sql
-   psql -U <user> -d <database> -f backend/create_materialized_views.sql
+   psql -U postgres -d <database> -v app_user="'your_app_user'" -f backend/setup_database.sql
    ```
 
 #### Docker 权限
