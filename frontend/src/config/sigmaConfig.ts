@@ -75,6 +75,15 @@ export const NODE_INIT_CONFIG = {
   yearLayoutJitter: 0.06,     // 年份布局随机偏移为可用宽度的 6%
 } as const;
 
+/** 场地布局配置 */
+export const TRACK_LAYOUT_CONFIG = {
+  yPadding: 0.05,             // Y 轴上下各留 5% 边距
+  gaussianStdDev: 0.06,       // 高斯分布标准差（相对于可用高度的比例）
+  hurdZoneRatio: 0.15,        // 跳栏区域占底部 15%
+  dirtZoneRatio: 0.35,        // 泥地区域占中间 35%
+  turfZoneRatio: 0.45,        // 草地区域占上方 45%
+} as const;
+
 /** 边过滤配置 */
 export const EDGE_FILTER_CONFIG = {
   edgeBudgetMultiplier: 5,    // 边预算 = 节点数 * 5

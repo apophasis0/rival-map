@@ -7,6 +7,7 @@ import {
   DEFAULT_EDGE_CONFIG,
   PEDIGREE_EDGE_CONFIG,
   EDGE_FILTER_CONFIG,
+  TRACK_LAYOUT_CONFIG,
 } from '../config/sigmaConfig';
 
 // ============ 图数据构建 ============
@@ -25,12 +26,53 @@ function calculateYearLayoutX(node: BackendNode, minYear: number, yearRange: num
   return baseX + (Math.random() - 0.5) * usableWidth * NODE_INIT_CONFIG.yearLayoutJitter;
 }
 
-/** 计算默认布局的坐标 */
-function calculateDefaultPosition(centerX: number, centerY: number, initSpread: number): { x: number; y: number } {
-  return {
-    x: centerX + (Math.random() - 0.5) * initSpread,
-    y: centerY + (Math.random() - 0.5) * initSpread,
-  };
+/** 计算场地布局的 Y 坐标
+ *  从上到下：草地 → 泥地 → 跳栏
+ *  跳栏马排最下方，草地马排最上方
+ */
+function calculateTrackLayoutY(
+  node: BackendNode,
+  height: number,
+): number {
+  const turfPrize = node.turfPrize ?? 0;
+  const dirtPrize = node.dirtPrize ?? 0;
+  const hurdPrize = node.hurdPrize ?? 0;
+  const totalPrize = turfPrize + dirtPrize + hurdPrize;
+
+  // 高斯随机（Box-Muller 变换）
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const gaussian = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const jitter = gaussian * height * TRACK_LAYOUT_CONFIG.gaussianStdDev;
+
+  // 情况 1：有跳栏奖金 → 排最下方（跳栏区）
+  if (hurdPrize > 0) {
+    const zoneHeight = height * TRACK_LAYOUT_CONFIG.hurdZoneRatio;
+    const zoneTop = height * (1 - TRACK_LAYOUT_CONFIG.yPadding);
+    const zoneBottom = zoneTop - zoneHeight;
+    const y = zoneBottom + Math.random() * zoneHeight + jitter * 0.5;
+    return Math.max(zoneBottom, Math.min(zoneTop, y));
+  }
+
+  // 情况 2：没有跳栏奖金，按草地/泥地比例分配
+  const usableHeight = height * (1 - TRACK_LAYOUT_CONFIG.yPadding - TRACK_LAYOUT_CONFIG.hurdZoneRatio);
+  const topMargin = height * TRACK_LAYOUT_CONFIG.yPadding;
+
+  if (totalPrize === 0) {
+    // 无奖金数据 → 中间位置
+    return height / 2 + jitter;
+  }
+
+  const turfRatio = (turfPrize + dirtPrize) > 0 ? turfPrize / (turfPrize + dirtPrize) : 0.5;
+
+  // turfRatio=1.0 → 最上方, turfRatio=0.0 → 跳栏区上方
+  const yCenter = topMargin + (1 - turfRatio) * usableHeight;
+  const y = yCenter + jitter;
+
+  const minY = topMargin;
+  const maxY = height * (1 - TRACK_LAYOUT_CONFIG.yPadding - TRACK_LAYOUT_CONFIG.hurdZoneRatio);
+
+  return Math.max(minY, Math.min(maxY, y));
 }
 
 /** 将后端返回的数据转换为 graphology Graph 实例 */
@@ -40,6 +82,7 @@ export function buildGraph(
   height: number,
   useYearLayout: boolean,
   useCommunityMode: boolean = false,
+  useTrackLayout: boolean = false,
 ): { graph: Graph; communityResult: CommunityResult } {
   const graph = new Graph();
   let communityResult: CommunityResult = { communities: null, stats: null };
@@ -69,18 +112,23 @@ export function buildGraph(
     }
   }
 
-  // 添加节点
+  // 添加节点（X 轴和 Y 轴正交独立）
   for (const node of data.nodes) {
     let x: number;
     let y: number;
 
+    // X 轴：由年份布局决定
     if (useYearLayout) {
       x = calculateYearLayoutX(node, minYear, yearRange, usableWidth, padding);
-      y = centerY + (Math.random() - 0.5) * initSpread;
     } else {
-      const pos = calculateDefaultPosition(centerX, centerY, initSpread);
-      x = pos.x;
-      y = pos.y;
+      x = centerX + (Math.random() - 0.5) * initSpread;
+    }
+
+    // Y 轴：由场地布局决定
+    if (useTrackLayout) {
+      y = calculateTrackLayoutY(node, height);
+    } else {
+      y = centerY + (Math.random() - 0.5) * initSpread;
     }
 
     graph.addNode(node.id, {

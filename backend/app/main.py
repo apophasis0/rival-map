@@ -6,7 +6,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import get_db_connection, init_db_pool, close_db_pool
-from .graph_service import fetch_horse_network, fetch_pedigree_links
+from .graph_service import fetch_horse_network, fetch_pedigree_links, fetch_track_prizes
 from .cache import init_redis, close_redis, get_cache, set_cache, generate_cache_key
 
 logger = logging.getLogger("rival_map")
@@ -115,6 +115,24 @@ async def get_network(
         include_g2=include_g2
     )
 
+    # 查询场地奖金数据并合并到节点中
+    track_prizes = fetch_track_prizes(
+        min_prize=min_prize,
+        max_rank=max_rank,
+        strict_rank_mode=strict_mode,
+        include_g2=include_g2
+    )
+    track_prize_map = {tp["id"]: tp for tp in track_prizes}
+    for node in data["nodes"]:
+        if node["id"] in track_prize_map:
+            node["turfPrize"] = track_prize_map[node["id"]]["turfPrize"]
+            node["dirtPrize"] = track_prize_map[node["id"]]["dirtPrize"]
+            node["hurdPrize"] = track_prize_map[node["id"]]["hurdPrize"]
+        else:
+            node["turfPrize"] = 0.0
+            node["dirtPrize"] = 0.0
+            node["hurdPrize"] = 0.0
+
     # 如果需要血统边，查询并添加到 links 中
     parent_types = []
     if include_sire:
@@ -202,6 +220,51 @@ async def get_pedigree(
             if link["source"] in valid_ids and link["target"] in valid_ids
         ]
         result = {"links": links}
+
+    # 存入缓存
+    ttl = int(os.getenv("CACHE_TTL", "3600"))
+    set_cache(cache_key, result, ttl=ttl)
+
+    return result
+
+
+@app.get("/api/track-prizes")
+async def get_track_prizes(
+    min_weight: int = Query(2, alias="minWeight"),
+    min_prize: float = Query(0.0, alias="minPrize"),
+    max_rank: int = Query(18, alias="maxRank"),
+    strict_mode: bool = Query(True, alias="strictMode"),
+    include_g2: bool = Query(False, alias="includeG2")
+):
+    """
+    获取每匹马在不同场地类型的累计奖金（用于场地偏好布局）
+    """
+    # 尝试从缓存获取
+    cache_params = {
+        "minWeight": min_weight,
+        "minPrize": min_prize,
+        "maxRank": max_rank,
+        "strictMode": strict_mode,
+        "includeG2": include_g2,
+    }
+    cache_key = generate_cache_key("track_prizes", cache_params)
+    cached_data = get_cache(cache_key)
+
+    if cached_data is not None:
+        logger.info(f"[Cache] 命中缓存: {cache_key}")
+        return cached_data
+
+    logger.info(f"[Cache] 未命中缓存，查询数据库: {cache_key}")
+
+    # 缓存未命中，查询数据库
+    track_prizes = fetch_track_prizes(
+        min_prize=min_prize,
+        max_rank=max_rank,
+        strict_rank_mode=strict_mode,
+        include_g2=include_g2
+    )
+
+    result = {"trackPrizes": track_prizes}
 
     # 存入缓存
     ttl = int(os.getenv("CACHE_TTL", "3600"))

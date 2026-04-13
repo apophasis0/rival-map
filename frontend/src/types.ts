@@ -6,6 +6,9 @@ export interface BackendNode {
   sex: string;
   prize_score: number | null;
   active_year: number;
+  turfPrize?: number | null;
+  dirtPrize?: number | null;
+  hurdPrize?: number | null;
 }
 
 export type LinkType = 'rival' | 'sire' | 'dam';

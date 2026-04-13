@@ -5,7 +5,7 @@ import { panelService } from './services/panelService';
 import { buildGraph } from './services/graphBuilder';
 import { PEDIGREE_EDGE_CONFIG } from './config/sigmaConfig';
 import { initSigma, startLayout } from './services/rendererService';
-import { setHighlight, showTooltip, showEdgeTooltip, hideEdgeTooltip, setTooltipMode } from './services/interactionService';
+import { setHighlight, showTooltip, showEdgeTooltip, hideEdgeTooltip, setTooltipMode, lockHighlight, unlockHighlight } from './services/interactionService';
 import type { BackendGraphData } from './types';
 import type { SigmaNodeEventPayload } from 'sigma/types';
 import { renderCommunityLegend } from './utils/communityUI';
@@ -38,6 +38,7 @@ async function fetchNetworkData(
 const appContainer = document.getElementById('app') as HTMLElement;
 const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInputElement;
 const yearLayoutToggle = document.getElementById('yearLayoutToggle') as HTMLInputElement;
+const trackLayoutToggle = document.getElementById('trackLayoutToggle') as HTMLInputElement;
 const strictRankToggle = document.getElementById('strictRankToggle') as HTMLInputElement;
 const g2Toggle = document.getElementById('g2Toggle') as HTMLInputElement;
 const communityToggle = document.getElementById('communityToggle') as HTMLInputElement;
@@ -65,6 +66,7 @@ async function renderNetwork(
   maxRank: number,
   strictMode: boolean,
   useCommunityMode: boolean,
+  useTrackLayout: boolean,
   includeSire: boolean,
   includeDam: boolean,
   includeG2: boolean,
@@ -77,7 +79,7 @@ async function renderNetwork(
     const useYearLayout = yearLayoutToggle.checked;
 
     // 构建图（initRenderer 内部会设置 appState.graph）
-    const { graph, communityResult } = buildGraph(data, width, height, useYearLayout, useCommunityMode);
+    const { graph, communityResult } = buildGraph(data, width, height, useYearLayout, useCommunityMode, useTrackLayout);
 
     if (graph.order === 0) {
       appState.cleanup();
@@ -125,6 +127,21 @@ function initRenderer(graph: Graph): void {
     setHighlight(null);
   });
 
+  // 绑定节点点击事件 — 锁定高亮
+  renderer.on('clickNode', (event: SigmaNodeEventPayload) => {
+    lockHighlight(event.node);
+  });
+
+  // 绑定点击空白区域 — 解除锁定
+  renderer.on('clickStage', () => {
+    unlockHighlight();
+  });
+
+  // 双击空白区域也能解除锁定
+  renderer.on('doubleClickStage', () => {
+    unlockHighlight();
+  });
+
   // 绑定边 hover 事件（显示权重）
   renderer.on('enterEdge', (event: { edge: string; event: { original?: Event } }) => {
     const originalEvent = event.event.original;
@@ -166,11 +183,12 @@ function updateGraph(): void {
   const maxRank = parseInt(rankSlider.value, 10) || 18;
   const strictMode = strictRankToggle.checked;
   const useCommunityMode = communityToggle.checked;
+  const useTrackLayout = trackLayoutToggle.checked;
   const includeSire = sireToggle.checked;
   const includeDam = damToggle.checked;
   const includeG2 = g2Toggle.checked;
-  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, sireMode=${includeSire}, damMode=${includeDam}, includeG2=${includeG2}`);
-  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, includeSire, includeDam, includeG2);
+  console.log(`[UpdateGraph] minWeight=${minWeight}, minPrize=${minPrize}, maxRank=${maxRank}, strictMode=${strictMode}, communityMode=${useCommunityMode}, trackLayout=${useTrackLayout}, sireMode=${includeSire}, damMode=${includeDam}, includeG2=${includeG2}`);
+  renderNetwork(minWeight, minPrize, maxRank, strictMode, useCommunityMode, useTrackLayout, includeSire, includeDam, includeG2);
 }
 
 // 切换血统边的显隐（不重绘，仅在已有图上操作）
@@ -265,6 +283,7 @@ rankSlider.addEventListener('change', updateGraph);
 strictRankToggle.addEventListener('change', updateGraph);
 g2Toggle.addEventListener('change', updateGraph);
 communityToggle.addEventListener('change', updateGraph);
+trackLayoutToggle.addEventListener('change', updateGraph);
 sireToggle.addEventListener('change', togglePedigreeEdges);
 damToggle.addEventListener('change', togglePedigreeEdges);
 

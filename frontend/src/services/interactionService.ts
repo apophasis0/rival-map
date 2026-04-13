@@ -21,12 +21,50 @@ const showLabelsToggle = document.getElementById('showLabelsToggle') as HTMLInpu
 let tooltipMode: 'follow' | 'fixed' | 'hidden' = 'follow';
 let currentTooltipType: 'node' | 'edge' | null = null; // 当前显示的是节点还是边的 tooltip
 
+// 点击锁定高亮状态
+let lockedNodeId: string | null = null;
+
 export function setTooltipMode(mode: 'follow' | 'fixed' | 'hidden'): void {
   tooltipMode = mode;
   // 清除固定定位样式
   if (mode !== 'fixed') {
     tooltipEl.classList.remove('tooltip-fixed');
   }
+}
+
+/** 锁定高亮到指定节点 */
+export function lockHighlight(nodeId: string): void {
+  const renderer = appState.renderer;
+  const graph = appState.graph;
+  if (!renderer || !graph) return;
+
+  lockedNodeId = nodeId;
+
+  const context = buildHighlightContext(graph, nodeId);
+  applyLabelVisibility(renderer, context);
+
+  const nodeReducer = createNodeReducer(context, true);
+  const edgeReducer = createEdgeReducer(context, true);
+
+  renderer.setSetting('nodeReducer', nodeReducer);
+  renderer.setSetting('edgeReducer', edgeReducer);
+  renderer.refresh();
+}
+
+/** 解锁高亮，恢复正常状态 */
+export function unlockHighlight(): void {
+  lockedNodeId = null;
+  clearHighlightForLock();
+}
+
+/** 检查是否有锁定的节点 */
+export function isLocked(): boolean {
+  return lockedNodeId !== null;
+}
+
+/** 获取当前锁定的节点 ID */
+export function getLockedNodeId(): string | null {
+  return lockedNodeId;
 }
 
 /** 设置高亮状态 */
@@ -37,22 +75,27 @@ export function setHighlight(centerNodeId: string | null): void {
   if (!renderer || !graph) return;
 
   if (centerNodeId === null) {
+    // 如果有锁定节点，不执行清除
+    if (lockedNodeId !== null) return;
     clearHighlight(renderer);
     return;
   }
 
+  // 如果有锁定节点，hover 其他节点时不改变高亮
+  if (lockedNodeId !== null) return;
+
   const context = buildHighlightContext(graph, centerNodeId);
   applyLabelVisibility(renderer, context);
 
-  const nodeReducer = createNodeReducer(context);
-  const edgeReducer = createEdgeReducer(context);
+  const nodeReducer = createNodeReducer(context, false);
+  const edgeReducer = createEdgeReducer(context, false);
 
   renderer.setSetting('nodeReducer', nodeReducer);
   renderer.setSetting('edgeReducer', edgeReducer);
   renderer.refresh();
 }
 
-/** 清除高亮 */
+/** 清除高亮（非锁定状态） */
 function clearHighlight(renderer: Sigma): void {
   renderer.setSetting('nodeReducer', null);
   renderer.setSetting('edgeReducer', null);
@@ -60,6 +103,20 @@ function clearHighlight(renderer: Sigma): void {
 
   const labelDensity = showLabelsToggle.checked ? 0.15 : 0;
   renderer.setSetting('labelDensity', labelDensity);
+}
+
+/** 清除锁定高亮状态 */
+function clearHighlightForLock(): void {
+  const renderer = appState.renderer;
+  if (!renderer) return;
+
+  renderer.setSetting('nodeReducer', null);
+  renderer.setSetting('edgeReducer', null);
+  tooltipEl.style.opacity = '0';
+
+  const labelDensity = showLabelsToggle.checked ? 0.15 : 0;
+  renderer.setSetting('labelDensity', labelDensity);
+  renderer.refresh();
 }
 
 /** 构建高亮上下文 */
@@ -134,7 +191,7 @@ function applyLabelVisibility(renderer: Sigma, _context: HighlightContext): void
 }
 
 /** 创建节点 reducer */
-function createNodeReducer(context: HighlightContext): (node: string, data: Parameters<NonNullable<Settings['nodeReducer']>>[1]) => Partial<NodeDisplayData> {
+function createNodeReducer(context: HighlightContext, isLock: boolean): (node: string, data: Parameters<NonNullable<Settings['nodeReducer']>>[1]) => Partial<NodeDisplayData> {
   return (node: string, data: Parameters<NonNullable<Settings['nodeReducer']>>[1]): Partial<NodeDisplayData> => {
     const isVisible = context.twoHop.has(node);
 
@@ -155,11 +212,16 @@ function createNodeReducer(context: HighlightContext): (node: string, data: Para
     // 大小区分
     const originalSize = data.size;
     if (node === context.centerNodeId) {
-      return {
+      const result: Partial<NodeDisplayData> = {
         ...baseResult,
         size: originalSize * NODE_SIZE_MULTIPLIERS.centerNode,
-        // 保留节点原有的颜色，不覆盖
+        highlighted: true,
       };
+      // 锁定状态：将颜色调整为金色
+      if (isLock) {
+        result.color = '#ffd700';
+      }
+      return result;
     } else if (context.oneHopNodes.has(node)) {
       return {
         ...baseResult,
@@ -172,7 +234,7 @@ function createNodeReducer(context: HighlightContext): (node: string, data: Para
 }
 
 /** 创建边 reducer */
-function createEdgeReducer(context: HighlightContext): (edge: string, data: Parameters<NonNullable<Settings['edgeReducer']>>[1]) => Partial<EdgeDisplayData> {
+function createEdgeReducer(context: HighlightContext, _isLock: boolean): (edge: string, data: Parameters<NonNullable<Settings['edgeReducer']>>[1]) => Partial<EdgeDisplayData> {
   return (edge: string, data: Parameters<NonNullable<Settings['edgeReducer']>>[1]): Partial<EdgeDisplayData> => {
     const edgeWeight = context.graph.getEdgeAttributes(edge).weight ?? 1;
     const normalizedWeight = edgeWeight / context.maxEdgeWeight;

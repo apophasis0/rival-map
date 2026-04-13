@@ -212,6 +212,78 @@ def _build_query_with_mv(min_intersections: int, max_rank: int, strict_rank_mode
     return query, {"max_rank": max_rank, "min_intersections": min_intersections}
 
 
+def fetch_track_prizes(
+    min_prize: float = 0.0,
+    max_rank: int = 18,
+    strict_rank_mode: bool = True,
+    include_g2: bool = False
+) -> list[dict]:
+    """
+    查询每匹马在不同场地类型的累计奖金
+
+    返回: [{ "id": ketto_num, "turfPrize": float, "dirtPrize": float }]
+    """
+    with get_db_connection() as conn:
+        # 根据 include_g2 动态生成 grade_cd 过滤条件
+        if include_g2:
+            grade_filter = "rd.grade_cd IN ('g1', 'jg1', 'g2', 'jg2')"
+        else:
+            grade_filter = "rd.grade_cd IN ('g1', 'jg1')"
+
+        # race_umas.honsyokin 和 fukasyokin 已经是该马在该场获得的奖金（百日元）
+        # track_cd::text 前4位判断: turf=草地, dirt=泥地, hurd=跳栏
+        query = f"""
+                 WITH qualified_records AS (
+                     SELECT ru.ketto_num,
+                            rd.track_cd::text AS track_type,
+                            ru.honsyokin + ru.fukasyokin AS prize
+                     FROM race_umas ru
+                              JOIN race_details rd ON ru.race_date = rd.race_date
+                         AND ru.jyo_cd = rd.jyo_cd
+                         AND ru.kaiji = rd.kaiji
+                         AND ru.nichiji = rd.nichiji
+                         AND ru.race_num = rd.race_num
+                     WHERE {grade_filter}
+                       AND ru.ketto_num <> '0000000000'
+                       AND rd.data_kubun IN ('7', 'A', 'B')
+                       AND ru.kakutei_jyuni > 0
+                       AND ru.kakutei_jyuni <= %(max_rank)s
+                 ),
+                 track_prizes AS (
+                     SELECT ketto_num,
+                            track_type,
+                            SUM(prize)::numeric / 100.0 AS total_prize
+                     FROM qualified_records
+                     GROUP BY ketto_num, track_type
+                     HAVING SUM(prize)::numeric / 100.0 >= %(min_prize)s
+                 )
+                 SELECT ketto_num AS id,
+                        COALESCE(SUM(CASE WHEN track_type LIKE 'turf%%'
+                                          THEN total_prize ELSE 0 END), 0) AS turf_prize,
+                        COALESCE(SUM(CASE WHEN track_type LIKE 'dirt%%'
+                                          THEN total_prize ELSE 0 END), 0) AS dirt_prize,
+                        COALESCE(SUM(CASE WHEN track_type LIKE 'hurd%%'
+                                          THEN total_prize ELSE 0 END), 0) AS hurd_prize
+                 FROM track_prizes
+                 GROUP BY ketto_num
+                 """
+        rows = conn.execute(query, {
+            "max_rank": max_rank,
+            "min_prize": min_prize,
+        }).fetchall()
+
+        result = []
+        for row in rows:
+            result.append({
+                "id": row["id"],
+                "turfPrize": float(row["turf_prize"]),
+                "dirtPrize": float(row["dirt_prize"]),
+                "hurdPrize": float(row["hurd_prize"]),
+            })
+
+        return result
+
+
 def _build_query_cte(min_intersections: int, max_rank: int, strict_rank_mode: bool, include_g2: bool = False):
     """不使用物化视图，使用 CTE 构建查询（回退方案）"""
     # 根据 include_g2 动态生成 grade_cd 过滤条件
