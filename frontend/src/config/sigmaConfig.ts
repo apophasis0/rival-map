@@ -60,12 +60,12 @@ export const PEDIGREE_EDGE_CONFIG = {
 /** 默认边配置 */
 export const DEFAULT_EDGE_CONFIG = {
   color: '#d0d0d0',
-  alphaBase: 0.03,
-  alphaScale: 0.77,
+  alphaBase: 0.008,       // 降低透明度基数（原 0.03），减少边的整体可见度
+  alphaScale: 0.5,        // 降低缩放因子（原 0.77），使边的透明度范围更保守
   alphaExponent: 0.6,
-  alphaMax: 0.8,
-  sizeBase: 0.2,
-  sizeScale: 1.8,
+  alphaMax: 0.6,          // 降低最大透明度（原 0.8）
+  sizeBase: 0.08,         // 降低尺寸基数（原 0.2），使边更细
+  sizeScale: 1.2,         // 降低缩放因子（原 1.8），减少尺寸对比
 } as const;
 
 /** 节点初始化配置 */
@@ -103,9 +103,13 @@ export const SIGMA_DEFAULT_SETTINGS = {
   enableCameraZooming: true,
   enableCameraPanning: true,
   enableEdgeEvents: true,  // 启用边 hover 事件
-  defaultNodeColor: '#4a5568',
+  defaultNodeColor: '#63b3ed',  // 更亮的节点颜色（原 #4a5568），提高可视性
   defaultEdgeColor: '#dddddd',
   defaultEdgeType: 'line',
   defaultNodeType: 'circle',
   itemSizesReference: 'positions',
+  // 节点描边配置：增强节点边界，使其在密集边中更醒目
+  nodeBorderColor: '#ffffff',
+  nodeBorderSize: 0.5,
+  nodeBorderSizeMultiplier: 1.5,  // 节点越大，描边越粗
 } as const;

@@ -191,6 +191,9 @@ function addRivalEdges(graph: Graph, data: BackendGraphData, nodeCount: number):
     console.log(`[Edge] 宿敌边数 ${rivalLinks.length} 超过预算 ${edgeBudget}，动态过滤阈值: ${edgeVisibilityThreshold}`);
   }
 
+  // 计算动态透明度调整因子（边越多，透明度越低）
+  const edgeDensityFactor = calculateEdgeDensityFactor(rivalLinks.length, nodeCount);
+
   let visibleEdgeCount = 0;
   for (const link of rivalLinks) {
     if (link.weight < edgeVisibilityThreshold) continue;
@@ -199,7 +202,7 @@ function addRivalEdges(graph: Graph, data: BackendGraphData, nodeCount: number):
     visibleEdgeCount++;
 
     const normalizedWeight = link.weight / maxWeight;
-    const alpha = DEFAULT_EDGE_CONFIG.alphaBase + DEFAULT_EDGE_CONFIG.alphaScale * Math.pow(normalizedWeight, DEFAULT_EDGE_CONFIG.alphaExponent);
+    const alpha = (DEFAULT_EDGE_CONFIG.alphaBase + DEFAULT_EDGE_CONFIG.alphaScale * Math.pow(normalizedWeight, DEFAULT_EDGE_CONFIG.alphaExponent)) * edgeDensityFactor;
     const size = DEFAULT_EDGE_CONFIG.sizeBase + DEFAULT_EDGE_CONFIG.sizeScale * normalizedWeight;
 
     graph.addEdge(link.source, link.target, {
@@ -211,7 +214,26 @@ function addRivalEdges(graph: Graph, data: BackendGraphData, nodeCount: number):
     });
   }
 
-  console.log(`[Edge] 可见宿敌边数: ${visibleEdgeCount} / ${rivalLinks.length} (阈值: ${edgeVisibilityThreshold})`);
+  console.log(`[Edge] 可见宿敌边数: ${visibleEdgeCount} / ${rivalLinks.length} (阈值: ${edgeVisibilityThreshold}, 密度因子: ${edgeDensityFactor.toFixed(2)})`);
+}
+
+/** 计算动态边密度调整因子
+ *  当边数相对节点数较多时，降低边的透明度，避免"灰蒙蒙"的效果
+ */
+function calculateEdgeDensityFactor(edgeCount: number, nodeCount: number): number {
+  if (nodeCount === 0) return 1;
+  
+  // 计算平均度数（每个节点平均连多少条边）
+  const avgDegree = (2 * edgeCount) / nodeCount;
+  
+  // 当平均度数 > 10 时开始降低透明度
+  // avgDegree=10 → 因子 1.0
+  // avgDegree=20 → 因子 0.6
+  // avgDegree=50 → 因子 0.3
+  if (avgDegree <= 10) return 1;
+  
+  const factor = Math.max(0.2, Math.pow(10 / avgDegree, 0.5));
+  return factor;
 }
 
 /** 添加血统边到图中（仅当 data 中包含时） */

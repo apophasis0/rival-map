@@ -14,8 +14,8 @@ export function lerpColorHex(
 
 /** 根据奖金计算节点大小（Sigma 的 size 属性） */
 export function getNodeSize(prize: number | null): number {
-  if (!prize) return 4;
-  return Math.max(4, Math.sqrt(prize) * 0.1);
+  if (!prize) return 6;  // 提高最小尺寸（原 4）
+  return Math.max(6, Math.sqrt(prize) * 0.15);  // 提高尺寸系数（原 0.1）
 }
 
 /** 根据奖金计算节点颜色（Viridis 色阶），感知均匀、色盲友好 */
