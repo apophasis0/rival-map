@@ -27,8 +27,8 @@ function calculateYearLayoutX(node: BackendNode, minYear: number, yearRange: num
 }
 
 /** 计算场地布局的 Y 坐标
- *  从上到下：草地 → 泥地 → 跳栏
- *  跳栏马排最下方，草地马排最上方
+ *  从上到下：跳栏 → 草地 → 泥地
+ *  跳栏马排最上方，草地在中间，泥地在最下方
  */
 function calculateTrackLayoutY(
   node: BackendNode,
@@ -45,32 +45,37 @@ function calculateTrackLayoutY(
   const gaussian = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   const jitter = gaussian * height * TRACK_LAYOUT_CONFIG.gaussianStdDev;
 
-  // 情况 1：有跳栏奖金 → 排最下方（跳栏区）
+  const topMargin = height * TRACK_LAYOUT_CONFIG.yPadding;
+  const bottomMargin = height * TRACK_LAYOUT_CONFIG.yPadding;
+
+  // 情况 1：有跳栏奖金 → 排最上方（跳栏区）
   if (hurdPrize > 0) {
     const zoneHeight = height * TRACK_LAYOUT_CONFIG.hurdZoneRatio;
-    const zoneTop = height * (1 - TRACK_LAYOUT_CONFIG.yPadding);
-    const zoneBottom = zoneTop - zoneHeight;
-    const y = zoneBottom + Math.random() * zoneHeight + jitter * 0.5;
-    return Math.max(zoneBottom, Math.min(zoneTop, y));
+    const zoneTop = topMargin;
+    const zoneBottom = zoneTop + zoneHeight;
+    const y = zoneTop + Math.random() * zoneHeight + jitter * 0.5;
+    return Math.max(zoneTop, Math.min(zoneBottom, y));
   }
 
   // 情况 2：没有跳栏奖金，按草地/泥地比例分配
-  const usableHeight = height * (1 - TRACK_LAYOUT_CONFIG.yPadding - TRACK_LAYOUT_CONFIG.hurdZoneRatio);
-  const topMargin = height * TRACK_LAYOUT_CONFIG.yPadding;
+  // 跳栏区占顶部，剩余空间给草地和泥地
+  const hurdZoneHeight = height * TRACK_LAYOUT_CONFIG.hurdZoneRatio;
+  const remainingHeight = height - topMargin - bottomMargin - hurdZoneHeight;
+  const turfDirtStartY = topMargin + hurdZoneHeight;
 
   if (totalPrize === 0) {
-    // 无奖金数据 → 中间位置
-    return height / 2 + jitter;
+    // 无奖金数据 → 草地/泥地中间位置
+    return turfDirtStartY + remainingHeight / 2 + jitter;
   }
 
   const turfRatio = (turfPrize + dirtPrize) > 0 ? turfPrize / (turfPrize + dirtPrize) : 0.5;
 
-  // turfRatio=1.0 → 最上方, turfRatio=0.0 → 跳栏区上方
-  const yCenter = topMargin + (1 - turfRatio) * usableHeight;
+  // turfRatio=1.0 → 草地区顶部, turfRatio=0.0 → 泥地区底部
+  const yCenter = turfDirtStartY + (1 - turfRatio) * remainingHeight;
   const y = yCenter + jitter;
 
-  const minY = topMargin;
-  const maxY = height * (1 - TRACK_LAYOUT_CONFIG.yPadding - TRACK_LAYOUT_CONFIG.hurdZoneRatio);
+  const minY = turfDirtStartY;
+  const maxY = height - bottomMargin;
 
   return Math.max(minY, Math.min(maxY, y));
 }
