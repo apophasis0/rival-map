@@ -23,6 +23,11 @@ DROP INDEX IF EXISTS idx_race_details_g1;
 DROP INDEX IF EXISTS idx_race_umas_g1_lookup;
 DROP INDEX IF EXISTS idx_race_umas_ketto;
 DROP INDEX IF EXISTS idx_race_umas_ketto_prize;
+DROP INDEX IF EXISTS idx_umas_ketto_num;
+DROP INDEX IF EXISTS idx_hansyokus_hansyoku_num;
+DROP INDEX IF EXISTS idx_hansyokus_ketto_num;
+DROP INDEX IF EXISTS idx_race_details_track;
+DROP INDEX IF EXISTS idx_race_umas_track_join;
 
 -- 1.1 加速 race_details 表的 G1/JG1/G2 过滤和 JOIN
 CREATE INDEX idx_race_details_g1
@@ -43,7 +48,42 @@ CREATE INDEX idx_race_umas_ketto_prize
 ON race_umas(ketto_num)
 INCLUDE (honsyokin, fukasyokin, bamei, sex_cd, race_date);
 
+-- 1.5 加速 fetch_track_prizes 中 race_details 的 track_cd 关联查询
+CREATE INDEX idx_race_details_track
+ON race_details(race_date, jyo_cd, kaiji, nichiji, race_num)
+INCLUDE (track_cd, grade_cd, data_kubun)
+WHERE grade_cd IN ('g1', 'jg1', 'g2', 'jg2') AND data_kubun IN ('7', 'A', 'B');
+
+-- 1.6 加速 fetch_track_prizes 中 race_umas 的 JOIN + 名次过滤
+CREATE INDEX idx_race_umas_track_join
+ON race_umas(race_date, jyo_cd, kaiji, nichiji, race_num)
+INCLUDE (ketto_num, honsyokin, fukasyokin, kakutei_jyuni)
+WHERE kakutei_jyuni > 0 AND ketto_num <> '0000000000';
+
 \echo '✓ 基础表索引创建完成'
+
+-- =====================================================
+-- 第 1.5 步：在血统相关表上创建索引
+-- =====================================================
+\echo '======================================'
+\echo '第 1.5 步：创建血统表索引...'
+\echo '======================================'
+
+-- 1.7 加速 fetch_pedigree_links 中 umas 表的马匹查询
+CREATE INDEX idx_umas_ketto_num
+ON umas(ketto_num)
+WHERE ketto_num <> '0000000000';
+
+-- 1.8 加速 fetch_pedigree_links 中 hansyokus 表的繁殖番号查找（部分索引）
+CREATE INDEX idx_hansyokus_hansyoku_num
+ON hansyokus(hansyoku_num)
+WHERE ketto_num IS NOT NULL;
+
+-- 1.9 加速 fetch_pedigree_links 中外层马匹 ID 过滤
+CREATE INDEX idx_hansyokus_ketto_num
+ON hansyokus(ketto_num);
+
+\echo '✓ 血统表索引创建完成'
 
 -- =====================================================
 -- 第 2 步：授予基础表的 SELECT 权限
@@ -54,6 +94,8 @@ INCLUDE (honsyokin, fukasyokin, bamei, sex_cd, race_date);
 
 GRANT SELECT ON race_umas TO :app_user;
 GRANT SELECT ON race_details TO :app_user;
+GRANT SELECT ON umas TO :app_user;
+GRANT SELECT ON hansyokus TO :app_user;
 
 \echo '✓ 基础表权限已授予'
 
@@ -125,6 +167,8 @@ DROP INDEX IF EXISTS idx_mv_g1g2_ketto;
 DROP INDEX IF EXISTS idx_mv_g1g2_race;
 DROP INDEX IF EXISTS idx_mv_g1g2_rank;
 DROP INDEX IF EXISTS idx_mv_g1g2_grade;
+DROP INDEX IF EXISTS idx_mv_g1g2_grade_rank;
+DROP INDEX IF EXISTS idx_mv_g1g2_ketto_grade;
 DROP INDEX IF EXISTS idx_mv_g1g2_pairs_source;
 DROP INDEX IF EXISTS idx_mv_g1g2_pairs_target;
 DROP INDEX IF EXISTS idx_mv_g1g2_pairs_weight;
@@ -140,10 +184,16 @@ CREATE INDEX idx_mv_g1g2_race ON mv_g1g2_horse_records(race_date, jyo_cd, kaiji,
 CREATE INDEX idx_mv_g1g2_rank ON mv_g1g2_horse_records(kakutei_jyuni);
 CREATE INDEX idx_mv_g1g2_grade ON mv_g1g2_horse_records(grade_cd);
 
--- 4.3 唯一索引（支持 CONCURRENTLY 刷新 mv_g1g2_horse_pairs 所必需）
+-- 4.3 复合索引：加速严格模式下的 grade_cd + kakutei_jyuni 联合过滤
+CREATE INDEX idx_mv_g1g2_grade_rank ON mv_g1g2_horse_records(grade_cd, kakutei_jyuni);
+
+-- 4.4 复合索引：加速按马匹 ID + 等级过滤的查询（节点查询使用）
+CREATE INDEX idx_mv_g1g2_ketto_grade ON mv_g1g2_horse_records(ketto_num, grade_cd, kakutei_jyuni);
+
+-- 4.5 唯一索引（支持 CONCURRENTLY 刷新 mv_g1g2_horse_pairs 所必需）
 CREATE UNIQUE INDEX uk_mv_g1g2_horse_pairs ON mv_g1g2_horse_pairs(source, target);
 
--- 4.4 mv_g1g2_horse_pairs 查询索引
+-- 4.6 mv_g1g2_horse_pairs 查询索引
 CREATE INDEX idx_mv_g1g2_pairs_source ON mv_g1g2_horse_pairs(source);
 CREATE INDEX idx_mv_g1g2_pairs_target ON mv_g1g2_horse_pairs(target);
 CREATE INDEX idx_mv_g1g2_pairs_weight ON mv_g1g2_horse_pairs(weight);
@@ -170,11 +220,18 @@ ALTER MATERIALIZED VIEW mv_g1g2_horse_pairs OWNER TO :app_user;
 \echo '======================================'
 
 -- 查看基础表索引
-\echo '--- 基础表索引 ---'
+\echo '--- 基础表索引（race_umas, race_details） ---'
 SELECT indexname, tablename
 FROM pg_indexes
 WHERE indexname LIKE 'idx_%'
   AND tablename IN ('race_umas', 'race_details')
+ORDER BY tablename, indexname;
+
+\echo '--- 血统表索引（umas, hansyokus） ---'
+SELECT indexname, tablename
+FROM pg_indexes
+WHERE indexname LIKE 'idx_%'
+  AND tablename IN ('umas', 'hansyokus')
 ORDER BY tablename, indexname;
 
 -- 查看物化视图状态
