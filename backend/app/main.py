@@ -1,22 +1,43 @@
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import get_db_connection, init_db_pool, close_db_pool
 from .graph_service import fetch_horse_network, fetch_pedigree_links, fetch_track_prizes
-from .cache import init_redis, close_redis, get_cache, set_cache, generate_cache_key
+from .cache import (
+    init_redis,
+    close_redis,
+    get_cache,
+    set_cache,
+    generate_cache_key,
+    clear_cache_prefix,
+)
 
 logger = logging.getLogger("rival_map")
 logging.basicConfig(level=logging.INFO)
 
 
-def refresh_materialized_views():
+def _env_seconds(name: str, default: int) -> int:
+    """读取以秒为单位的整数环境变量，非法值回退到默认值。"""
+    try:
+        return max(60, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+# 物化视图刷新间隔（秒），默认 1 小时
+MV_REFRESH_INTERVAL = _env_seconds("MV_REFRESH_INTERVAL", 3600)
+
+
+def refresh_materialized_views() -> bool:
     """
     刷新物化视图，确保查询使用最新数据。
     如果物化视图不存在，则跳过（首次部署时还未创建）。
+    返回是否执行了刷新。
     """
     try:
         with get_db_connection() as conn:
@@ -29,7 +50,7 @@ def refresh_materialized_views():
 
             if not result or not result.get('exists'):
                 logger.info("[MV] 物化视图不存在，跳过刷新")
-                return
+                return False
 
             # 刷新两个物化视图
             logger.info("[MV] 开始刷新物化视图...")
@@ -42,19 +63,36 @@ def refresh_materialized_views():
             logger.info("[MV] mv_g1g2_horse_pairs 刷新完成")
 
             logger.info("[MV] 所有物化视图刷新完成！")
+            return True
     except Exception as e:
         logger.warning(f"[MV] 物化视图刷新失败（可能是首次部署，还未创建物化视图）: {e}")
+        return False
+
+
+async def refresh_loop() -> None:
+    """启动后立即刷新一次，之后按 MV_REFRESH_INTERVAL 周期刷新，并清理 API 缓存。"""
+    while True:
+        refreshed = await asyncio.to_thread(refresh_materialized_views)
+        if refreshed:
+            cleared = await asyncio.to_thread(clear_cache_prefix)
+            logger.info(f"[MV] 已清理 API 缓存 {cleared} 项")
+        await asyncio.sleep(MV_REFRESH_INTERVAL)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动时初始化连接池，关闭时清理"""
     init_db_pool()
-    refresh_materialized_views()
     init_redis()
-    yield
-    close_redis()
-    close_db_pool()
+    refresh_task = asyncio.create_task(refresh_loop())
+    try:
+        yield
+    finally:
+        refresh_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await refresh_task
+        close_redis()
+        close_db_pool()
 
 
 app = FastAPI(title="JRA Network API", lifespan=lifespan)

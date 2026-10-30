@@ -123,6 +123,24 @@ def delete_cache(key: str) -> bool:
         return False
 
 
+def clear_cache_prefix(prefix: str = CACHE_PREFIX) -> int:
+    """
+    删除所有以 prefix 开头的缓存键，返回删除数量。
+    物化视图刷新后调用，避免继续返回旧数据。
+    """
+    if redis_client is None:
+        return 0
+
+    try:
+        keys = list(redis_client.scan_iter(match=f"{prefix}*", count=500))
+        if keys:
+            redis_client.delete(*keys)
+        return len(keys)
+    except redis.RedisError as e:
+        logger.warning(f"[Redis] 清理缓存失败: {e}")
+        return 0
+
+
 def generate_cache_key(endpoint: str, params: dict) -> str:
     """
     根据端点名称和参数生成缓存 key

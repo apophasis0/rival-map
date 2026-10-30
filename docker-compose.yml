@@ -8,7 +8,9 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      DB_NAME: ${DB_NAME}
+      # 统一数据库：后端直接读取 jvlink（与 sire-analysis 共用），
+      # 不再使用原先独立的 rival_map 库；库名固定于此，避免 .env 残留旧值。
+      DB_NAME: jvlink
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: 127.0.0.1
@@ -18,6 +20,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
       CACHE_TTL: ${CACHE_TTL:-3600}
+      # 物化视图刷新间隔（秒），刷新后会自动清理 API 缓存
+      MV_REFRESH_INTERVAL: ${MV_REFRESH_INTERVAL:-3600}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs')"]
       interval: 30s

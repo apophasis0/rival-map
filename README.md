@@ -208,7 +208,7 @@ rival-map/
 
 ### 物化视图刷新
 
-**自动刷新**：后端每次启动时自动刷新物化视图。
+**自动刷新**：后端启动时立即刷新一次，之后按 `MV_REFRESH_INTERVAL`（默认 3600 秒）周期刷新。刷新完成后会自动清理 `rival_map:*` Redis 缓存，避免接口继续返回旧数据。
 
 **手动刷新**（数据更新后）：
 ```bash
@@ -216,7 +216,7 @@ psql -U postgres -d <database> -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g
 psql -U postgres -d <database> -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_g1g2_horse_pairs;"
 ```
 
-**定时刷新**：建议在数据导入脚本末尾添加 `REFRESH MATERIALIZED VIEW` 命令，或设置 cron job 定期执行。
+> 生产部署直接读取统一的 `jvlink` 库（由 JVLink 持续更新），基础数据无需另行导入；上述自动刷新即可让图谱保持最新。
 
 ## 🔧 开发指南
 
@@ -272,13 +272,14 @@ api.apophasis.top        → 反向代理 → Docker 容器
 
 #### 数据库准备
 
-确保服务器上 PostgreSQL 已有：
-1. **数据库和用户**
-2. **数据表**：`race_umas` 和 `race_details`
-3. **索引和物化视图**：
+生产部署直接使用**统一数据库 `jvlink`**（与 sire-analysis 共用，由 JVLink 持续更新），不再使用独立的 `rival_map` 库：
+
+1. **用户**：`.env` 中的 `DB_USER` / `DB_PASSWORD` 需能读取 `public.race_umas`、`public.race_details` 等基础表，并拥有物化视图（刷新需要所有者权限）。
+2. **物化视图**（首次或重建时执行一次）：
    ```bash
-   psql -U postgres -d <database> -v app_user="'your_app_user'" -f backend/setup_database.sql
+   psql -h 127.0.0.1 -U jvadmin -d jvlink -v ON_ERROR_STOP=1 -f backend/setup_jvlink_matviews.sql
    ```
+3. `docker-compose.yml` 已将容器的 `DB_NAME` 固定为 `jvlink`，`.env` 中无需再配置库名。
 
 #### Docker 权限
 
@@ -299,7 +300,7 @@ nano /opt/rival-map/.env
 
 `.env` 内容：
 ```env
-DB_NAME=your_database_name
+# 库名已固定为 jvlink（见 docker-compose.yml），这里只需配置账号
 DB_USER=your_database_user
 DB_PASSWORD=your_database_password
 DB_HOST=localhost
