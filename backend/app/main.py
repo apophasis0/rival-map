@@ -72,10 +72,15 @@ def refresh_materialized_views() -> bool:
 async def refresh_loop() -> None:
     """启动后立即刷新一次，之后按 MV_REFRESH_INTERVAL 周期刷新，并清理 API 缓存。"""
     while True:
-        refreshed = await asyncio.to_thread(refresh_materialized_views)
-        if refreshed:
-            cleared = await asyncio.to_thread(clear_cache_prefix)
-            logger.info(f"[MV] 已清理 API 缓存 {cleared} 项")
+        try:
+            refreshed = await asyncio.to_thread(refresh_materialized_views)
+            if refreshed:
+                cleared = await asyncio.to_thread(clear_cache_prefix)
+                logger.info(f"[MV] 已清理 API 缓存 {cleared} 项")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[MV] 周期刷新异常，将在下一周期重试")
         await asyncio.sleep(MV_REFRESH_INTERVAL)
 
 
